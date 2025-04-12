@@ -19,7 +19,11 @@ type Exercise = {
   sets: ExerciseSet[]
 }
 
-export default function WorkoutForm() {
+interface WorkoutFormProps {
+  onSuccess?: () => void;
+}
+
+export default function WorkoutForm({ onSuccess }: WorkoutFormProps) {
   const router = useRouter()
   const [workoutName, setWorkoutName] = useState('')
   const [workoutDate, setWorkoutDate] = useState(
@@ -89,13 +93,13 @@ export default function WorkoutForm() {
   }
 
   // Update set details
-  const updateSet = (exerciseId: string, setIndex: number, field: 'weight' | 'reps' | 'rpe', value: number) => {
+  const updateSet = (exerciseId: string, setIndex: number, field: 'weight' | 'reps' | 'rpe', value: string | number) => {
     setExercises(prevExercises => {
       return prevExercises.map(exercise => {
         if (exercise.id === exerciseId) {
           const updatedSets = [...exercise.sets];
           // Ensure value is a valid number
-          const numericValue = isNaN(value) ? 0 : value;
+          const numericValue = typeof value === 'string' ? parseFloat(value) || 0 : value;
           updatedSets[setIndex] = {
             ...updatedSets[setIndex],
             [field]: numericValue
@@ -150,8 +154,7 @@ export default function WorkoutForm() {
       })
       
       if (!response.ok) {
-        const errorData = await response.json() as { error: string }
-        throw new Error(errorData.error || 'Error creating workout')
+        throw new Error('Failed to create workout')
       }
       
       // Reset form
@@ -162,7 +165,11 @@ export default function WorkoutForm() {
       // Refresh page to show new workout
       router.refresh()
       
+      // Call onSuccess callback if provided
+      onSuccess?.()
+      
     } catch (err) {
+      console.error('Error creating workout:', err)
       setError(err instanceof Error ? err.message : 'An unknown error occurred')
     } finally {
       setIsSubmitting(false)
@@ -170,12 +177,12 @@ export default function WorkoutForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in">
       {error && <div className="bg-destructive/15 text-destructive p-3 rounded-md text-sm">{error}</div>}
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="workout-name" className="block text-sm font-medium mb-1">
+      <div className="space-y-4">
+        <div className="animate-slide-up">
+          <label htmlFor="workout-name" className="block text-sm font-medium text-gray-700">
             Workout Name
           </label>
           <Input
@@ -184,13 +191,13 @@ export default function WorkoutForm() {
             value={workoutName}
             onChange={(e) => setWorkoutName(e.target.value)}
             placeholder="e.g., Leg Day, Upper Body, etc."
-            className="w-full"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             required
           />
         </div>
         
-        <div>
-          <label htmlFor="workout-date" className="block text-sm font-medium mb-1">
+        <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
+          <label htmlFor="workout-date" className="block text-sm font-medium text-gray-700">
             Date
           </label>
           <Input
@@ -198,14 +205,14 @@ export default function WorkoutForm() {
             type="date"
             value={workoutDate}
             onChange={(e) => setWorkoutDate(e.target.value)}
-            className="w-full"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             required
           />
         </div>
       </div>
       
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center animate-slide-up" style={{ animationDelay: '0.2s' }}>
           <h3 className="text-lg font-medium">Exercises</h3>
           <Button 
             type="button" 
@@ -219,7 +226,7 @@ export default function WorkoutForm() {
         </div>
         
         {exercises.map((exercise, exerciseIndex) => (
-          <Card key={exercise.id} className="p-4">
+          <Card key={exercise.id} className="p-4 border rounded-lg animate-scale-in" style={{ animationDelay: `${0.2 + exerciseIndex * 0.1}s` }}>
             <div className="flex flex-col space-y-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -278,34 +285,34 @@ export default function WorkoutForm() {
                         <tr key={setIndex} className="border-b border-opacity-50">
                           <td className="px-2 py-2">{setIndex + 1}</td>
                           <td className="px-2 py-2">
-                            <Input
+                            <input
                               type="number"
+                              value={set.weight}
+                              onChange={(e) => updateSet(exercise.id, setIndex, 'weight', e.target.value)}
+                              className="border rounded p-1 w-full text-sm"
                               min="0"
-                              step="0.5"
-                              value={set.weight.toString()}
-                              onChange={(e) => updateSet(exercise.id, setIndex, 'weight', parseFloat(e.target.value) || 0)}
-                              className="w-20 h-8"
+                              step="1.25"
                             />
                           </td>
                           <td className="px-2 py-2">
-                            <Input
+                            <input
                               type="number"
+                              value={set.reps}
+                              onChange={(e) => updateSet(exercise.id, setIndex, 'reps', e.target.value)}
+                              className="border rounded p-1 w-full text-sm"
                               min="0"
-                              value={set.reps.toString()}
-                              onChange={(e) => updateSet(exercise.id, setIndex, 'reps', parseInt(e.target.value) || 0)}
-                              className="w-16 h-8"
                             />
                           </td>
                           <td className="px-2 py-2">
-                            <Input
+                            <input
                               type="number"
+                              value={set.rpe || ''}
+                              onChange={(e) => updateSet(exercise.id, setIndex, 'rpe', e.target.value)}
+                              className="border rounded p-1 w-full text-sm"
                               min="0"
                               max="10"
                               step="0.5"
-                              value={set.rpe !== undefined ? set.rpe.toString() : ''}
-                              onChange={(e) => updateSet(exercise.id, setIndex, 'rpe', parseFloat(e.target.value) || 0)}
-                              className="w-16 h-8"
-                              placeholder="1-10"
+                              placeholder="RPE"
                             />
                           </td>
                           <td className="px-2 py-2">
@@ -331,11 +338,11 @@ export default function WorkoutForm() {
         ))}
       </div>
       
-      <div className="pt-4">
+      <div className="flex justify-end space-x-4 animate-slide-up" style={{ animationDelay: '0.3s' }}>
         <Button 
           type="submit" 
           disabled={isSubmitting}
-          className="w-full md:w-auto"
+          className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
         >
           {isSubmitting ? 'Saving...' : 'Save Workout'}
         </Button>

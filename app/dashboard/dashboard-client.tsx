@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { TrendingUp, PlusCircle, Eye, ChevronRight, Calendar, BarChart } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 
 interface Set {
   id: string;
@@ -49,9 +50,15 @@ const itemVariants = {
 export default function DashboardClient({ workouts }: { workouts: Workout[] }) {
   const { data: session } = useSession()
   const [isFormVisible, setIsFormVisible] = useState(false)
+  const router = useRouter()
   
   if (!session) {
     return null // Let the server component handle the redirect
+  }
+
+  const handleWorkoutAdded = () => {
+    setIsFormVisible(false)
+    router.refresh() // Refresh the page to get the latest data
   }
 
   return (
@@ -107,7 +114,7 @@ export default function DashboardClient({ workouts }: { workouts: Workout[] }) {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <WorkoutForm />
+                <WorkoutForm onSuccess={handleWorkoutAdded} />
               </CardContent>
             </Card>
           </motion.div>

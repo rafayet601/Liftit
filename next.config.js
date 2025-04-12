@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    turbo: {
+      rules: {
+        // Optional Turbo rules
+      },
+    },
+  },
   // Ensure static asset handling is properly configured
   images: {
     domains: [],
