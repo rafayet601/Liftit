@@ -169,7 +169,7 @@ export default function GetStartedClient() {
             <div className="grid md:grid-cols-2 gap-8 items-center">
               <ol className="space-y-5 list-decimal list-outside ml-5 text-muted-foreground">
                 <li>
-                  <span className="font-medium text-foreground">Log your first workout:</span> Head to the Dashboard and click "Log Workout".
+                  <span className="font-medium text-foreground">Log your first workout:</span> Head to the Dashboard and click &ldquo;Log Workout&rdquo;.
                 </li>
                 <li>
                   <span className="font-medium text-foreground">Explore Progress:</span> After a few sessions, check the Progress page for insights.
