@@ -7,47 +7,31 @@ import AppleProvider from 'next-auth/providers/apple'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import NextAuth from 'next-auth/next'
 
-// Create a demo user if it doesn't exist - ONLY FOR DEVELOPMENT
-const createDemoUserIfNotExists = async () => {
-  // Only create demo users in development environment
-  if (process.env.NODE_ENV !== 'development') {
-    console.warn('Attempted to create demo user in non-development environment');
-    return null;
-  }
-  
-  try {
-    const user = await prisma.user.findFirst({
-      where: { 
-        OR: [
-          { id: 'demo-1' },
-          { email: 'demo@example.com' }
-        ]
-      }
-    });
-    
-    if (!user) {
-      const newUser = await prisma.user.create({
-        data: {
-          id: 'demo-1',
-          name: 'Demo User',
-          email: 'demo@example.com',
-          image: 'https://ui-avatars.com/api/?name=Demo+User&background=0D8ABC&color=fff'
-        }
-      });
-      console.log('Created demo user:', newUser);
-      return newUser;
-    }
-    
-    return user;
-  } catch (error) {
-    console.error('Error creating demo user:', error);
-    throw error;
-  }
-};
+const demoLoginEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true' ||
+  process.env.ENABLE_DEMO_LOGIN === 'true'
 
-// Run this once at startup - but only in development
-if (process.env.NODE_ENV === 'development') {
-  createDemoUserIfNotExists().catch(console.error);
+const getDemoCredentials = () => {
+  if (!demoLoginEnabled) {
+    return null
+  }
+
+  const username =
+    process.env.DEMO_LOGIN_USERNAME ||
+    (process.env.NODE_ENV === 'development' ? 'demo-user' : undefined)
+  const password =
+    process.env.DEMO_LOGIN_PASSWORD ||
+    (process.env.NODE_ENV === 'development' ? 'password' : undefined)
+  const email =
+    process.env.DEMO_LOGIN_EMAIL ||
+    (process.env.NODE_ENV === 'development' ? 'demo@example.com' : undefined)
+
+  if (!username || !password || !email) {
+    console.warn('Demo login requested but credentials are missing. Skipping demo provider.')
+    return null
+  }
+
+  return { username, password, email }
 }
 
 // Get the NextAuth secret from environment variables or generate a warning
@@ -100,51 +84,53 @@ export const authOptions: NextAuthOptions = {
           }),
         ]
       : []),
-    // Include a fallback Credentials provider for development ONLY
-    ...(process.env.NODE_ENV === 'development' ? [
-      CredentialsProvider({
-        id: 'credentials',
-        name: 'Development Login',
-        credentials: {
-          username: { label: "Username", type: "text", placeholder: "demo-user" },
-          password: { label: "Password", type: "password", placeholder: "password" }
-        },
-        async authorize(credentials) {
-          // Log the attempt for debugging
-          console.log("Attempting to authorize with credentials:", credentials?.username);
-          
-          // IMPORTANT: This is only for development & testing!
-          console.warn("Using hardcoded credentials - NOT SECURE FOR PRODUCTION");
-          
-          // Check if credentials exist
-          if (!credentials?.username || !credentials?.password) {
-            console.error("Missing username or password");
-            return null;
-          }
-          
-          // For development demo purposes - NEVER use hard-coded credentials in production
-          if (credentials.username === "demo-user" && credentials.password === "password") {
-            console.log("Development credentials authorized successfully");
-            
-            // Make sure demo user exists
-            const user = await createDemoUserIfNotExists();
-            
-            if (!user) return null;
-            
-            // Return a user object that will be stored in the JWT token
-            return { 
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              image: user.image
-            };
-          }
-          
-          console.error("Development credentials failed - username:", credentials.username, "password length:", credentials.password.length);
-          return null;
-        }
-      })
-    ] : []),
+    // Include a credentials provider only when demo logins are explicitly enabled
+    ...(demoLoginEnabled
+      ? [
+          CredentialsProvider({
+            id: 'credentials',
+            name: 'Demo Login',
+            credentials: {
+              username: { label: 'Username', type: 'text' },
+              password: { label: 'Password', type: 'password' },
+            },
+            async authorize(credentials) {
+              const demoCredentials = getDemoCredentials()
+
+              if (!demoCredentials) {
+                console.warn('Demo login attempted without configured credentials.')
+                return null
+              }
+
+              const { username, password, email } = demoCredentials
+
+              if (!credentials?.username || !credentials?.password) {
+                return null
+              }
+
+              if (credentials.username !== username || credentials.password !== password) {
+                return null
+              }
+
+              const user = await prisma.user.findUnique({
+                where: { email },
+              })
+
+              if (!user) {
+                console.warn('Demo login failed because the demo user has not been seeded.')
+                return null
+              }
+
+              return {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                image: user.image,
+              }
+            },
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     // JWT callback to add user ID to the token

@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Dumbbell } from 'lucide-react'
 import { Providers } from './providers'
+import { SignOutButton } from '@/components/auth/SignOutButton'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -26,7 +27,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.className} bg-gradient-sleek antialiased min-h-screen flex flex-col`}>
-        <Providers>
+        <Providers session={session}>
           <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/20 animate-fadeIn">
             <div className="container flex h-16 items-center justify-between">
               <Link href="/" className="flex items-center gap-2 gradient-text font-semibold text-lg group">
@@ -50,13 +51,11 @@ export default async function RootLayout({
                     >
                       Progress
                     </Link>
-                    <Button variant="outline" size="sm" asChild className="border-glow">
-                      <Link href="/api/auth/signout">Sign Out</Link>
-                    </Button>
+                    <SignOutButton />
                   </>
                 ) : (
                   <Button variant="default" size="sm" asChild className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-300">
-                    <Link href="/api/auth/signin">Sign In</Link>
+                    <Link href="/auth/signin">Sign In</Link>
                   </Button>
                 )}
               </nav>

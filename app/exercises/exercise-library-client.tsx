@@ -241,7 +241,7 @@ export default function ExerciseLibraryClient() {
           </div>
           <h3 className="text-xl font-medium mb-2">No exercises found</h3>
           <p className="text-muted-foreground mb-6">
-            Try adjusting your search or filters to find what you're looking for.
+            Try adjusting your search or filters to find what you&apos;re looking for.
           </p>
         </div>
       )}
