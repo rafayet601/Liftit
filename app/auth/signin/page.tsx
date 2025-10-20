@@ -20,6 +20,9 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false)
   const [authError, setAuthError] = useState(error || '')
   const [debug, setDebug] = useState<any>({})
+  const demoLoginEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_LOGIN === 'true'
+  const demoUsername = process.env.NEXT_PUBLIC_DEMO_LOGIN_USERNAME || ''
+  const demoPassword = process.env.NEXT_PUBLIC_DEMO_LOGIN_PASSWORD || ''
   
   useEffect(() => {
     const params: Record<string, string> = {};
@@ -37,12 +40,17 @@ export default function SignIn() {
     e.preventDefault()
     setIsLoading(true)
     setAuthError('')
-    
-    const loginUsername = username.trim() || 'demo-user'
-    const loginPassword = password.trim() || 'password'
-    
+
     try {
-      console.log(`Attempting to sign in with: username='${loginUsername}', password='${loginPassword}'`);
+      if (!demoLoginEnabled) {
+        setAuthError('Email/password login is disabled. Please sign in with an OAuth provider.')
+        return
+      }
+
+      const loginUsername = username.trim()
+      const loginPassword = password.trim()
+
+      console.log(`Attempting to sign in with credentials for ${loginUsername}`)
       const result = await signIn('credentials', {
         username: loginUsername,
         password: loginPassword,
@@ -69,17 +77,24 @@ export default function SignIn() {
   
   const handleDemoLogin = (e: React.MouseEvent) => {
     e.preventDefault();
+
     setIsLoading(true);
+    if (!demoLoginEnabled || !demoUsername || !demoPassword) {
+      console.warn('Demo login requested but demo credentials are not configured.')
+      setIsLoading(false)
+      return
+    }
+
     try {
-      console.log("Performing direct demo login");
+      console.log('Performing direct demo login');
       signIn('credentials', {
-        username: 'demo-user',
-        password: 'password',
+        username: demoUsername,
+        password: demoPassword,
         callbackUrl: callbackUrl,
         redirect: true
       });
     } catch (err) {
-      console.error("Demo login failed:", err);
+      console.error('Demo login failed:', err);
       setIsLoading(false);
     }
   };
@@ -123,23 +138,25 @@ export default function SignIn() {
           
           <CardContent className="space-y-6 pt-2">
             {/* Demo Login Button */}
-            <motion.div 
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Button 
-                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md shadow-primary/20"
-                onClick={handleDemoLogin}
-                disabled={isLoading}
+            {demoLoginEnabled && (
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
               >
-                {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Dumbbell className="mr-2 h-4 w-4" />
-                )}
-                Sign in as Demo User
-              </Button>
-            </motion.div>
+                <Button
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md shadow-primary/20"
+                  onClick={handleDemoLogin}
+                  disabled={isLoading || !demoUsername || !demoPassword}
+                >
+                  {isLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Dumbbell className="mr-2 h-4 w-4" />
+                  )}
+                  Sign in as Demo User
+                </Button>
+              </motion.div>
+            )}
 
             {/* Divider */}
             <div className="relative my-6">
@@ -152,63 +169,70 @@ export default function SignIn() {
             </div>
 
             {/* Manual Login Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <motion.div 
-                className="space-y-2"
-                initial={{ x: -10, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-              >
-                <label htmlFor="username" className="text-sm font-medium text-muted-foreground">Username</label>
-                <Input 
-                  id="username" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="demo-user"
-                  type="text"
-                  autoComplete="username"
-                  className="bg-background/50 border-border/40 focus:border-primary/50 transition-all duration-300"
-                  required
-                />
-              </motion.div>
-              <motion.div 
-                className="space-y-2"
-                initial={{ x: -10, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-              >
-                <label htmlFor="password" className="text-sm font-medium text-muted-foreground">Password</label>
-                <Input 
-                  id="password" 
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="********"
-                  autoComplete="current-password"
-                  className="bg-background/50 border-border/40 focus:border-primary/50 transition-all duration-300"
-                  required
-                />
-              </motion.div>
-              <motion.div
-                initial={{ y: 10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="pt-2"
-              >
-                <Button 
-                  type="submit" 
-                  className="w-full shadow-md shadow-primary/20 transition-all duration-300" 
-                  disabled={isLoading}
+            {demoLoginEnabled && (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <motion.div
+                  className="space-y-2"
+                  initial={{ x: -10, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1 }}
                 >
-                  {isLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Sign In
-                </Button>
-              </motion.div>
-            </form>
+                  <label htmlFor="username" className="text-sm font-medium text-muted-foreground">Username</label>
+                  <Input
+                    id="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder={demoLoginEnabled && demoUsername ? demoUsername : 'your username'}
+                    type="text"
+                    autoComplete="username"
+                    className="bg-background/50 border-border/40 focus:border-primary/50 transition-all duration-300"
+                    required
+                  />
+                </motion.div>
+                <motion.div
+                  className="space-y-2"
+                  initial={{ x: -10, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <label htmlFor="password" className="text-sm font-medium text-muted-foreground">Password</label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="********"
+                    autoComplete="current-password"
+                    className="bg-background/50 border-border/40 focus:border-primary/50 transition-all duration-300"
+                    required
+                  />
+                </motion.div>
+                <motion.div
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="pt-2"
+                >
+                  <Button
+                    type="submit"
+                    className="w-full shadow-md shadow-primary/20 transition-all duration-300"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Sign In
+                  </Button>
+                </motion.div>
+              </form>
+            )}
+            {!demoLoginEnabled && (
+              <p className="text-sm text-muted-foreground text-center">
+                Email/password login is disabled. Enable demo credentials or use an OAuth provider to continue.
+              </p>
+            )}
             
             {/* Debug Info (Optional) */}
             {process.env.NODE_ENV === 'development' && Object.keys(debug).length > 0 && (
