@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Sparkles, TrendingUp, AlertTriangle, Trophy, Calendar, Target, Zap, Activity } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { ExerciseRecommendation, DeloadAlert } from '@/types'
+import { useUnit } from '@/contexts/UnitContext'
+import { convertWeight } from '@/lib/unitConversion'
 
 interface RecommendationsData {
   recommendations: ExerciseRecommendation[]
@@ -25,10 +27,11 @@ const containerVariants = {
 
 const itemVariants = {
   hidden: { y: 20, opacity: 0 },
-  show: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 24 } }
+  show: { y: 0, opacity: 1, transition: { type: "spring" as const, stiffness: 300, damping: 24 } }
 }
 
 export default function RecommendationsClient() {
+  const { weightUnit } = useUnit()
   const [data, setData] = useState<RecommendationsData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -220,7 +223,7 @@ export default function RecommendationsClient() {
             </h2>
             <div className="grid gap-4">
               {readyToTrain.map((rec, index) => (
-                <ExerciseRecommendationCard key={index} recommendation={rec} />
+                <ExerciseRecommendationCard key={index} recommendation={rec} weightUnit={weightUnit} />
               ))}
             </div>
           </motion.section>
@@ -240,7 +243,7 @@ export default function RecommendationsClient() {
             </h2>
             <div className="grid gap-4">
               {recentlyTrained.map((rec, index) => (
-                <ExerciseRecommendationCard key={index} recommendation={rec} />
+                <ExerciseRecommendationCard key={index} recommendation={rec} weightUnit={weightUnit} />
               ))}
             </div>
           </motion.section>
@@ -250,7 +253,7 @@ export default function RecommendationsClient() {
   )
 }
 
-function ExerciseRecommendationCard({ recommendation }: { recommendation: ExerciseRecommendation }) {
+function ExerciseRecommendationCard({ recommendation, weightUnit }: { recommendation: ExerciseRecommendation; weightUnit: 'kg' | 'lbs' }) {
   return (
     <motion.div variants={itemVariants}>
       <Card className="card-modern">
@@ -284,7 +287,7 @@ function ExerciseRecommendationCard({ recommendation }: { recommendation: Exerci
                 {recommendation.lastWorkout?.sets.map((set, i) => (
                   <div key={i} className="flex items-center gap-3 text-sm bg-background/50 p-2 rounded">
                     <span className="text-xs text-muted-foreground w-8">Set {i + 1}</span>
-                    <span className="font-medium">{set.weight}kg × {set.reps}</span>
+                    <span className="font-medium">{convertWeight(set.weight, weightUnit)}{weightUnit} × {set.reps}</span>
                     {set.rpe && (
                       <span className="text-xs text-muted-foreground ml-auto">RPE {set.rpe}</span>
                     )}
@@ -292,7 +295,7 @@ function ExerciseRecommendationCard({ recommendation }: { recommendation: Exerci
                 ))}
                 <div className="pt-2 border-t border-border/30">
                   <span className="text-xs text-muted-foreground">Total Volume: </span>
-                  <span className="text-sm font-semibold">{recommendation.lastWorkout?.volume}kg</span>
+                  <span className="text-sm font-semibold">{convertWeight(recommendation.lastWorkout?.volume || 0, weightUnit)}{weightUnit}</span>
                 </div>
               </div>
             </div>
@@ -307,7 +310,7 @@ function ExerciseRecommendationCard({ recommendation }: { recommendation: Exerci
                 {recommendation.suggestedWorkout.sets.map((set, i) => (
                   <div key={i} className="flex items-center gap-3 text-sm bg-primary/5 border border-primary/20 p-2 rounded">
                     <span className="text-xs text-muted-foreground w-8">Set {i + 1}</span>
-                    <span className="font-medium text-primary">{set.weight}kg × {set.reps}</span>
+                    <span className="font-medium text-primary">{convertWeight(set.weight, weightUnit)}{weightUnit} × {set.reps}</span>
                     {set.rpe && (
                       <span className="text-xs text-muted-foreground ml-auto">RPE {set.rpe}</span>
                     )}
@@ -316,7 +319,7 @@ function ExerciseRecommendationCard({ recommendation }: { recommendation: Exerci
                 <div className="pt-2 border-t border-primary/30">
                   <span className="text-xs text-muted-foreground">Target Volume: </span>
                   <span className="text-sm font-semibold text-primary">
-                    {recommendation.suggestedWorkout.totalVolume}kg
+                    {convertWeight(recommendation.suggestedWorkout.totalVolume, weightUnit)}{weightUnit}
                   </span>
                 </div>
               </div>

@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { TrendingUp, PlusCircle, Eye, ChevronRight, Calendar, BarChart, Dumbbell, Trophy, Target, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExerciseRecommendation } from '@/types'
+import { useUnit } from '@/contexts/UnitContext'
+import { convertWeight } from '@/lib/unitConversion'
 
 interface Set {
   id: string
@@ -57,6 +59,7 @@ const itemVariants = {
 }
 
 export default function DashboardClient({ workouts, stats }: DashboardClientProps) {
+  const { weightUnit } = useUnit()
   const [isFormVisible, setIsFormVisible] = useState(false)
   const [recommendations, setRecommendations] = useState<ExerciseRecommendation[]>([])
   const [loadingRecommendations, setLoadingRecommendations] = useState(true)
@@ -281,7 +284,7 @@ export default function DashboardClient({ workouts, stats }: DashboardClientProp
                                 </span>
                                 {maxWeight > 0 && (
                                   <span className="text-xs text-muted-foreground">
-                                    {maxWeight}kg
+                                    {convertWeight(maxWeight, weightUnit)}{weightUnit}
                                   </span>
                                 )}
                               </div>
@@ -298,7 +301,7 @@ export default function DashboardClient({ workouts, stats }: DashboardClientProp
                         <div className="mt-auto pt-4 border-t border-border/30">
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-muted-foreground">Total Volume</span>
-                            <span className="font-semibold text-accent">{Math.round(totalVolume)}kg</span>
+                            <span className="font-semibold text-accent">{Math.round(convertWeight(totalVolume, weightUnit))}{weightUnit}</span>
                           </div>
                         </div>
                       )}
@@ -361,7 +364,7 @@ export default function DashboardClient({ workouts, stats }: DashboardClientProp
                       <p className="text-xs text-muted-foreground">
                         {rec.suggestedWorkout.sets.length > 0 && (
                           <>
-                            Suggested: {rec.suggestedWorkout.sets[0].weight}kg × {rec.suggestedWorkout.sets[0].reps} reps
+                            Suggested: {convertWeight(rec.suggestedWorkout.sets[0].weight, weightUnit)}{weightUnit} × {rec.suggestedWorkout.sets[0].reps} reps
                           </>
                         )}
                       </p>

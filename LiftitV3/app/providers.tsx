@@ -2,6 +2,7 @@
 
 import { SessionProvider } from 'next-auth/react'
 import { Session } from 'next-auth'
+import { UnitProvider } from '@/contexts/UnitContext'
 
 export function Providers({ 
   children, 
@@ -12,7 +13,9 @@ export function Providers({
 }) {
   return (
     <SessionProvider session={session}>
-      {children}
+      <UnitProvider>
+        {children}
+      </UnitProvider>
     </SessionProvider>
   )
 }

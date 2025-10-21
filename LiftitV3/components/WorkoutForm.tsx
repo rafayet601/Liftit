@@ -9,6 +9,8 @@ import { Trash2, Plus, Save, GripVertical, Sparkles, History } from 'lucide-reac
 import { motion, AnimatePresence } from 'framer-motion'
 import PRCelebration from './PRCelebration'
 import { suggestNextWorkout } from '@/lib/progressiveOverload'
+import { useUnit } from '@/contexts/UnitContext'
+import { convertWeight, convertToKg } from '@/lib/unitConversion'
 
 type ExerciseSet = {
   weight: number
@@ -33,6 +35,7 @@ interface PRDetection {
 
 export default function WorkoutForm() {
   const router = useRouter()
+  const { weightUnit } = useUnit()
   const [workoutName, setWorkoutName] = useState('')
   const [workoutDate, setWorkoutDate] = useState(
     new Date().toISOString().split('T')[0]
@@ -163,7 +166,13 @@ export default function WorkoutForm() {
       return prevExercises.map(exercise => {
         if (exercise.id === exerciseId) {
           const updatedSets = [...exercise.sets]
-          const numericValue = isNaN(value) ? 0 : value
+          let numericValue = isNaN(value) ? 0 : value
+          
+          // Convert weight to kg for storage if user is entering in lbs
+          if (field === 'weight' && weightUnit === 'lbs') {
+            numericValue = convertToKg(numericValue, 'lbs')
+          }
+          
           updatedSets[setIndex] = {
             ...updatedSets[setIndex],
             [field]: numericValue
@@ -371,7 +380,7 @@ export default function WorkoutForm() {
                     <div className="space-y-2">
                       <div className="grid grid-cols-[40px_1fr_1fr_1fr_40px] gap-2 text-xs font-medium text-muted-foreground px-2">
                         <div>Set</div>
-                        <div>Weight (kg)</div>
+                        <div>Weight ({weightUnit})</div>
                         <div>Reps</div>
                         <div>RPE</div>
                         <div></div>
@@ -392,11 +401,11 @@ export default function WorkoutForm() {
                             <Input
                               type="number"
                               min="0"
-                              step="0.5"
-                              value={set.weight || ''}
+                              step={weightUnit === 'kg' ? '0.5' : '1'}
+                              value={set.weight ? convertWeight(set.weight, weightUnit) : ''}
                               onChange={(e) => updateSet(exercise.id, setIndex, 'weight', parseFloat(e.target.value) || 0)}
                               className="h-9 text-center"
-                              placeholder="60"
+                              placeholder={weightUnit === 'kg' ? '60' : '135'}
                             />
                             <Input
                               type="number"

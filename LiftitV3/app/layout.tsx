@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Dumbbell, Menu, X } from 'lucide-react'
 import { Providers } from './providers'
 import { SignOutButton } from '@/components/auth/SignOutButton'
+import { WeightUnitToggle } from '@/components/WeightUnitToggle'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -71,6 +72,7 @@ export default async function RootLayout({
                     >
                       Progress
                     </Link>
+                    <WeightUnitToggle />
                     <SignOutButton />
                   </>
                 ) : (
