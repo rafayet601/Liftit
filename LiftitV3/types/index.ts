@@ -79,3 +79,47 @@ export interface PersonalRecord {
   previousValue?: number
 }
 
+export interface PersonalRecordDetection {
+  isPersonalRecord: boolean
+  type: 'weight' | 'volume' | 'reps' | null
+  improvement: string
+}
+
+export interface DeloadAlert {
+  needed: boolean
+  reason: string
+  weeksSinceDeload?: number
+  volumeDropPercentage?: number
+  recommendedProtocol?: string
+}
+
+export interface ExerciseRecommendation {
+  exerciseName: string
+  lastWorkout: {
+    date: Date
+    sets: {
+      weight: number
+      reps: number
+      rpe?: number | null
+    }[]
+    volume: number
+  } | null
+  suggestedWorkout: {
+    sets: {
+      weight: number
+      reps: number
+      rpe?: number | null
+    }[]
+    totalVolume: number
+  }
+  progressAnalysis: {
+    volumeChange: number
+    volumeChangePercentage: number
+    suggestion: string
+    isProgress: boolean
+  } | null
+  personalRecord?: PersonalRecordDetection
+  deloadAlert?: DeloadAlert
+  daysSinceLastWorkout?: number
+}
+

@@ -60,6 +60,12 @@ export default async function RootLayout({
                       Dashboard
                     </Link>
                     <Link
+                      href="/recommendations"
+                      className="hidden md:block transition-all duration-300 hover:text-primary text-foreground/70 hover:translate-y-[-1px] font-medium"
+                    >
+                      Recommendations
+                    </Link>
+                    <Link
                       href="/progress"
                       className="hidden sm:block transition-all duration-300 hover:text-primary text-foreground/70 hover:translate-y-[-1px] font-medium"
                     >

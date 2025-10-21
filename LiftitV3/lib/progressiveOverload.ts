@@ -163,3 +163,89 @@ export function detectPersonalRecord(
   }
 }
 
+export interface WeeklyVolume {
+  weekStartDate: Date
+  totalVolume: number
+  averageRPE: number
+  workoutCount: number
+}
+
+/**
+ * Detect if user needs a deload week based on volume trends and RPE
+ */
+export function detectDeloadNeeded(
+  weeklyVolumes: WeeklyVolume[]
+): {
+  needed: boolean
+  reason: string
+  weeksSinceDeload?: number
+  volumeDropPercentage?: number
+  recommendedProtocol?: string
+} {
+  if (weeklyVolumes.length < 3) {
+    return {
+      needed: false,
+      reason: 'Not enough data to determine deload need (minimum 3 weeks required)'
+    }
+  }
+
+  // Sort by date descending (most recent first)
+  const sortedWeeks = [...weeklyVolumes].sort((a, b) => 
+    b.weekStartDate.getTime() - a.weekStartDate.getTime()
+  )
+
+  const lastWeek = sortedWeeks[0]
+  const previousWeeks = sortedWeeks.slice(1, 4) // Get 2-3 weeks before last week
+  
+  // Calculate average volume of previous weeks
+  const avgPreviousVolume = previousWeeks.reduce((sum, week) => sum + week.totalVolume, 0) / previousWeeks.length
+  
+  // Calculate volume drop percentage
+  const volumeDropPercentage = avgPreviousVolume > 0
+    ? Math.round(((avgPreviousVolume - lastWeek.totalVolume) / avgPreviousVolume) * 100)
+    : 0
+
+  // Check for consistent high RPE
+  const recentHighRPE = sortedWeeks.slice(0, 3).filter(week => week.averageRPE >= 8.5).length >= 2
+
+  // Check for significant volume drop
+  const significantDrop = volumeDropPercentage >= 15
+
+  // Check if user has been training for many consecutive weeks
+  const consecutiveWeeks = sortedWeeks.length
+  const longTrainingStretch = consecutiveWeeks >= 6
+
+  // Deload criteria
+  if (recentHighRPE && longTrainingStretch) {
+    return {
+      needed: true,
+      reason: 'High RPE average (8.5+) detected over multiple weeks with extended training period',
+      weeksSinceDeload: consecutiveWeeks,
+      recommendedProtocol: 'Reduce weight by 30-40%, maintain reps, focus on form and recovery'
+    }
+  }
+
+  if (significantDrop && !recentHighRPE) {
+    return {
+      needed: true,
+      reason: 'Significant volume drop detected, indicating potential fatigue or overtraining',
+      volumeDropPercentage,
+      recommendedProtocol: 'Take a full deload week or active recovery to allow body to recover'
+    }
+  }
+
+  if (longTrainingStretch && avgPreviousVolume > 0) {
+    return {
+      needed: true,
+      reason: `${consecutiveWeeks} consecutive weeks of training - proactive deload recommended`,
+      weeksSinceDeload: consecutiveWeeks,
+      recommendedProtocol: 'Reduce volume by 40-50%, maintain intensity, focus on technique'
+    }
+  }
+
+  return {
+    needed: false,
+    reason: 'No deload indicators detected - keep up the great work!'
+  }
+}
+

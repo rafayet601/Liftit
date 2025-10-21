@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import WorkoutForm from '@/components/WorkoutForm'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { TrendingUp, PlusCircle, Eye, ChevronRight, Calendar, BarChart, Dumbbell, Trophy, Target } from 'lucide-react'
+import { TrendingUp, PlusCircle, Eye, ChevronRight, Calendar, BarChart, Dumbbell, Trophy, Target, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ExerciseRecommendation } from '@/types'
 
 interface Set {
   id: string
@@ -57,6 +58,25 @@ const itemVariants = {
 
 export default function DashboardClient({ workouts, stats }: DashboardClientProps) {
   const [isFormVisible, setIsFormVisible] = useState(false)
+  const [recommendations, setRecommendations] = useState<ExerciseRecommendation[]>([])
+  const [loadingRecommendations, setLoadingRecommendations] = useState(true)
+
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      try {
+        const response = await fetch('/api/recommendations')
+        if (response.ok) {
+          const data = await response.json()
+          setRecommendations(data.recommendations.slice(0, 3)) // Top 3
+        }
+      } catch (error) {
+        console.error('Failed to fetch recommendations:', error)
+      } finally {
+        setLoadingRecommendations(false)
+      }
+    }
+    fetchRecommendations()
+  }, [])
   
   return (
     <div className="container mx-auto py-6 md:py-8 px-4 md:px-6">
@@ -301,12 +321,72 @@ export default function DashboardClient({ workouts, stats }: DashboardClientProp
         )}
       </section>
 
+      {/* Quick Recommendations Widget */}
+      {!loadingRecommendations && recommendations.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="mt-12"
+        >
+          <Card className="card-modern border-primary/30">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                  <CardTitle className="text-xl">AI Recommendations</CardTitle>
+                </div>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/recommendations" className="text-primary hover:text-primary">
+                    View All <ChevronRight className="h-4 w-4 ml-1" />
+                  </Link>
+                </Button>
+              </div>
+              <CardDescription>Suggested exercises for your next session</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {recommendations.map((rec, idx) => (
+                  <div 
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-background/50 rounded-lg border border-border/30 hover:border-primary/30 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-medium text-sm">{rec.exerciseName}</h4>
+                        {rec.personalRecord && (
+                          <Trophy className="h-4 w-4 text-primary" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {rec.suggestedWorkout.sets.length > 0 && (
+                          <>
+                            Suggested: {rec.suggestedWorkout.sets[0].weight}kg × {rec.suggestedWorkout.sets[0].reps} reps
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">
+                        {rec.daysSinceLastWorkout === 0 && 'Today'}
+                        {rec.daysSinceLastWorkout === 1 && 'Yesterday'}
+                        {(rec.daysSinceLastWorkout || 0) > 1 && `${rec.daysSinceLastWorkout}d ago`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.section>
+      )}
+
       {/* Quick Actions */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6"
+        className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6"
       >
         <Card className="card-modern cursor-pointer" onClick={() => window.location.href = '/progress'}>
           <CardContent className="p-6">

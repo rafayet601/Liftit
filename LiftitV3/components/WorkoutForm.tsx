@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { Trash2, Plus, Save, GripVertical } from 'lucide-react'
+import { Trash2, Plus, Save, GripVertical, Sparkles, History } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import PRCelebration from './PRCelebration'
+import { suggestNextWorkout } from '@/lib/progressiveOverload'
 
 type ExerciseSet = {
   weight: number
@@ -20,6 +22,15 @@ type Exercise = {
   sets: ExerciseSet[]
 }
 
+interface PRDetection {
+  exerciseName: string
+  detection: {
+    isPersonalRecord: boolean
+    type: 'weight' | 'volume' | 'reps' | null
+    improvement: string
+  }
+}
+
 export default function WorkoutForm() {
   const router = useRouter()
   const [workoutName, setWorkoutName] = useState('')
@@ -31,6 +42,9 @@ export default function WorkoutForm() {
   ])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [personalRecords, setPersonalRecords] = useState<PRDetection[]>([])
+  const [showPRCelebration, setShowPRCelebration] = useState(false)
+  const [exerciseSuggestions, setExerciseSuggestions] = useState<Map<string, any>>(new Map())
 
   const addExercise = () => {
     setExercises([
@@ -49,12 +63,72 @@ export default function WorkoutForm() {
     }
   }
 
-  const updateExerciseName = (id: string, name: string) => {
+  const updateExerciseName = async (id: string, name: string) => {
     setExercises(
       exercises.map(exercise => 
         exercise.id === id ? { ...exercise, name } : exercise
       )
     )
+
+    // Fetch exercise history for auto-fill suggestion
+    if (name.length >= 3) {
+      try {
+        const response = await fetch(`/api/progress/data?exercise=${encodeURIComponent(name)}&timeFrame=30days`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.length > 0) {
+            // Get the most recent workout
+            const lastWorkout = data[data.length - 1]
+            const suggestions = new Map(exerciseSuggestions)
+            suggestions.set(id, {
+              lastWorkout: lastWorkout,
+              exerciseName: name
+            })
+            setExerciseSuggestions(suggestions)
+          }
+        }
+      } catch (error) {
+        // Silently fail - suggestions are optional
+        console.log('Failed to fetch exercise suggestions:', error)
+      }
+    }
+  }
+
+  const loadSuggestedSets = (exerciseId: string) => {
+    const suggestion = exerciseSuggestions.get(exerciseId)
+    if (!suggestion) return
+
+    const lastWorkout = suggestion.lastWorkout
+    // Create suggested sets based on last workout
+    const lastSets = [{
+      weight: lastWorkout.weight || 0,
+      reps: lastWorkout.reps || 0,
+      rpe: lastWorkout.rpe || undefined
+    }]
+
+    const suggestedSets = suggestNextWorkout(lastSets)
+    
+    // Convert suggested sets to ExerciseSet format (removing null rpe values)
+    const convertedSets: ExerciseSet[] = suggestedSets.map(set => ({
+      weight: set.weight,
+      reps: set.reps,
+      rpe: set.rpe ?? undefined
+    }))
+    
+    setExercises(exercises.map(ex => {
+      if (ex.id === exerciseId) {
+        return {
+          ...ex,
+          sets: convertedSets.length > 0 ? convertedSets : ex.sets
+        }
+      }
+      return ex
+    }))
+
+    // Remove suggestion after using it
+    const newSuggestions = new Map(exerciseSuggestions)
+    newSuggestions.delete(exerciseId)
+    setExerciseSuggestions(newSuggestions)
   }
 
   const addSet = (exerciseId: string) => {
@@ -140,10 +214,19 @@ export default function WorkoutForm() {
         throw new Error(errorData.error || 'Error creating workout')
       }
       
+      const data = await response.json()
+      
+      // Check for personal records
+      if (data.personalRecords && data.personalRecords.length > 0) {
+        setPersonalRecords(data.personalRecords)
+        setShowPRCelebration(true)
+      }
+      
       // Reset form
       setWorkoutName('')
       setWorkoutDate(new Date().toISOString().split('T')[0])
       setExercises([{ id: '1', name: '', sets: [{ weight: 0, reps: 0 }] }])
+      setExerciseSuggestions(new Map())
       
       // Refresh page to show new workout
       router.refresh()
@@ -239,6 +322,24 @@ export default function WorkoutForm() {
                         placeholder="e.g., Bench Press, Squat"
                         className="h-10"
                       />
+                      {exerciseSuggestions.has(exercise.id) && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-2"
+                        >
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => loadSuggestedSets(exercise.id)}
+                            className="h-8 text-xs border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary"
+                          >
+                            <Sparkles className="h-3 w-3 mr-1" />
+                            Load Suggested Workout
+                          </Button>
+                        </motion.div>
+                      )}
                     </div>
                     
                     <Button
@@ -357,6 +458,13 @@ export default function WorkoutForm() {
           )}
         </Button>
       </div>
+
+      {/* PR Celebration Modal */}
+      <PRCelebration
+        personalRecords={personalRecords}
+        isOpen={showPRCelebration}
+        onClose={() => setShowPRCelebration(false)}
+      />
     </form>
   )
 }
