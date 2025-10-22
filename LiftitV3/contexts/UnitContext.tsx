@@ -13,10 +13,8 @@ const UnitContext = createContext<UnitContextType | undefined>(undefined)
 
 export function UnitProvider({ children }: { children: ReactNode }) {
   const [weightUnit, setWeightUnitState] = useState<WeightUnit>('kg')
-  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
     const preference = getWeightUnitPreference()
     setWeightUnitState(preference)
   }, [])
@@ -29,11 +27,6 @@ export function UnitProvider({ children }: { children: ReactNode }) {
   const toggleWeightUnit = () => {
     const newUnit: WeightUnit = weightUnit === 'kg' ? 'lbs' : 'kg'
     setWeightUnit(newUnit)
-  }
-
-  // Prevent hydration mismatch by not rendering until mounted
-  if (!mounted) {
-    return <>{children}</>
   }
 
   return (
