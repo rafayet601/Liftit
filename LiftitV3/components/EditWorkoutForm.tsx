@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Trash2, Plus, Save, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useUnit } from '@/contexts/UnitContext'
+import { convertWeight, convertToKg } from '@/lib/unitConversion'
 
 type ExerciseSet = {
   id?: string
@@ -34,6 +36,7 @@ interface EditWorkoutFormProps {
 
 export default function EditWorkoutForm({ workout }: EditWorkoutFormProps) {
   const router = useRouter()
+  const { weightUnit } = useUnit()
   const [workoutName, setWorkoutName] = useState(workout.name)
   const [workoutDate, setWorkoutDate] = useState(
     new Date(workout.date).toISOString().split('T')[0]
@@ -305,9 +308,13 @@ export default function EditWorkoutForm({ workout }: EditWorkoutFormProps) {
                                 <Input
                                   type="number"
                                   min="0"
-                                  step="0.5"
-                                  value={set.weight}
-                                  onChange={(e) => updateSet(exercise.id, setIndex, 'weight', parseFloat(e.target.value) || 0)}
+                                  step={weightUnit === 'kg' ? '0.5' : '1'}
+                                  value={set.weight || ''}
+                                  onChange={(e) => {
+                                    const inputValue = e.target.value === '' ? 0 : parseFloat(e.target.value)
+                                    // Store the value as-is, no conversion
+                                    updateSet(exercise.id, setIndex, 'weight', inputValue)
+                                  }}
                                   className="w-full h-9"
                                 />
                               </td>

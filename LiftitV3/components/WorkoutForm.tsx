@@ -8,9 +8,12 @@ import { Card } from '@/components/ui/card'
 import { Trash2, Plus, Save, GripVertical, Sparkles, History } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PRCelebration from './PRCelebration'
+import { VoiceInputButton } from './VoiceInput'
+import { VoiceTutorialTooltip } from './VoiceTutorialTooltip'
 import { suggestNextWorkout } from '@/lib/progressiveOverload'
 import { useUnit } from '@/contexts/UnitContext'
 import { convertWeight, convertToKg } from '@/lib/unitConversion'
+import { ParsedVoiceCommand } from '@/lib/voiceCommandParser'
 
 type ExerciseSet = {
   weight: number
@@ -48,6 +51,40 @@ export default function WorkoutForm() {
   const [personalRecords, setPersonalRecords] = useState<PRDetection[]>([])
   const [showPRCelebration, setShowPRCelebration] = useState(false)
   const [exerciseSuggestions, setExerciseSuggestions] = useState<Map<string, any>>(new Map())
+  const [previousUnit, setPreviousUnit] = useState(weightUnit)
+
+  // Handle unit conversion when weightUnit changes
+  React.useEffect(() => {
+    if (previousUnit !== weightUnit) {
+      // Convert all weight values when unit changes
+      setExercises(prevExercises => 
+        prevExercises.map(exercise => ({
+          ...exercise,
+          sets: exercise.sets.map(set => {
+            if (set.weight === 0) return set;
+            
+            // Convert the weight value
+            let convertedWeight: number;
+            if (previousUnit === 'kg' && weightUnit === 'lbs') {
+              // Converting from kg to lbs
+              convertedWeight = convertWeight(set.weight, 'lbs');
+            } else if (previousUnit === 'lbs' && weightUnit === 'kg') {
+              // Converting from lbs to kg  
+              convertedWeight = convertToKg(set.weight, 'lbs');
+            } else {
+              convertedWeight = set.weight;
+            }
+            
+            return {
+              ...set,
+              weight: convertedWeight
+            };
+          })
+        }))
+      );
+      setPreviousUnit(weightUnit);
+    }
+  }, [weightUnit, previousUnit]);
 
   const addExercise = () => {
     setExercises([
@@ -168,15 +205,51 @@ export default function WorkoutForm() {
           const updatedSets = [...exercise.sets]
           let numericValue = isNaN(value) ? 0 : value
           
-          // Convert weight to kg for storage if user is entering in lbs
-          if (field === 'weight' && weightUnit === 'lbs') {
-            numericValue = convertToKg(numericValue, 'lbs')
-          }
-          
           updatedSets[setIndex] = {
             ...updatedSets[setIndex],
             [field]: numericValue
           }
+          return {
+            ...exercise,
+            sets: updatedSets
+          }
+        }
+        return exercise
+      })
+    })
+  }
+
+  const handleVoiceCommand = (exerciseId: string, setIndex: number, command: ParsedVoiceCommand) => {
+    setExercises(prevExercises => {
+      return prevExercises.map(exercise => {
+        if (exercise.id === exerciseId) {
+          const updatedSets = [...exercise.sets]
+          const currentSet = updatedSets[setIndex]
+          
+          // Handle special actions
+          if (command.action === 'add_set') {
+            // Add a new set after current one
+            addSet(exerciseId)
+            return exercise
+          }
+          
+          // Update set with voice command data
+          const newSet = { ...currentSet }
+          
+          if (command.weight !== undefined) {
+            // Store weight in the current unit
+            newSet.weight = command.weight
+          }
+          
+          if (command.reps !== undefined) {
+            newSet.reps = command.reps
+          }
+          
+          if (command.rpe !== undefined) {
+            newSet.rpe = command.rpe
+          }
+          
+          updatedSets[setIndex] = newSet
           return {
             ...exercise,
             sets: updatedSets
@@ -214,7 +287,14 @@ export default function WorkoutForm() {
         body: JSON.stringify({
           name: workoutName,
           date: workoutDate,
-          exercises: validExercises
+          exercises: validExercises.map(exercise => ({
+            ...exercise,
+            sets: exercise.sets.map(set => ({
+              ...set,
+              // Convert weight to kg for storage if currently in lbs
+              weight: weightUnit === 'lbs' ? convertToKg(set.weight, 'lbs') : set.weight
+            }))
+          }))
         })
       })
       
@@ -378,11 +458,12 @@ export default function WorkoutForm() {
                     </div>
                     
                     <div className="space-y-2">
-                      <div className="grid grid-cols-[40px_1fr_1fr_1fr_40px] gap-2 text-xs font-medium text-muted-foreground px-2">
+                      <div className="grid grid-cols-[40px_1fr_1fr_1fr_40px_40px] gap-2 text-xs font-medium text-muted-foreground px-2">
                         <div>Set</div>
                         <div>Weight ({weightUnit})</div>
                         <div>Reps</div>
                         <div>RPE</div>
+                        <div></div>
                         <div></div>
                       </div>
                       
@@ -393,7 +474,7 @@ export default function WorkoutForm() {
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: 20 }}
-                            className="grid grid-cols-[40px_1fr_1fr_1fr_40px] gap-2 items-center"
+                            className="grid grid-cols-[40px_1fr_1fr_1fr_40px_40px] gap-2 items-center"
                           >
                             <div className="text-sm text-center font-medium text-muted-foreground">
                               {setIndex + 1}
@@ -402,8 +483,12 @@ export default function WorkoutForm() {
                               type="number"
                               min="0"
                               step={weightUnit === 'kg' ? '0.5' : '1'}
-                              value={set.weight ? convertWeight(set.weight, weightUnit) : ''}
-                              onChange={(e) => updateSet(exercise.id, setIndex, 'weight', parseFloat(e.target.value) || 0)}
+                              value={set.weight || ''}
+                              onChange={(e) => {
+                                const inputValue = e.target.value === '' ? 0 : parseFloat(e.target.value)
+                                // Store the value as-is, no conversion
+                                updateSet(exercise.id, setIndex, 'weight', inputValue)
+                              }}
                               className="h-9 text-center"
                               placeholder={weightUnit === 'kg' ? '60' : '135'}
                             />
@@ -424,6 +509,14 @@ export default function WorkoutForm() {
                               onChange={(e) => updateSet(exercise.id, setIndex, 'rpe', parseFloat(e.target.value) || 0)}
                               className="h-9 text-center"
                               placeholder="7-10"
+                            />
+                            <VoiceInputButton
+                              onCommandParsed={(command) => handleVoiceCommand(exercise.id, setIndex, command)}
+                              currentWeight={set.weight ? convertWeight(set.weight, weightUnit) : undefined}
+                              currentReps={set.reps}
+                              currentRpe={set.rpe}
+                              weightUnit={weightUnit}
+                              className="h-9 w-9 p-0"
                             />
                             <Button
                               type="button"
@@ -474,6 +567,9 @@ export default function WorkoutForm() {
         isOpen={showPRCelebration}
         onClose={() => setShowPRCelebration(false)}
       />
+
+      {/* Voice Input Tutorial */}
+      <VoiceTutorialTooltip />
     </form>
   )
 }
