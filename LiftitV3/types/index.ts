@@ -123,3 +123,17 @@ export interface ExerciseRecommendation {
   daysSinceLastWorkout?: number
 }
 
+export interface VoiceCommand {
+  weight?: number
+  reps?: number
+  rpe?: number
+  unit?: 'kg' | 'lbs'
+  exerciseName?: string
+  action?: 'add_set' | 'add_exercise' | 'next_set' | 'stop' | 'cancel' | 'same_weight' | 'increase'
+  modifier?: number
+  confidence: number
+  rawTranscript: string
+}
+
+export type VoiceRecognitionStatus = 'idle' | 'listening' | 'processing' | 'error' | 'unsupported'
+
