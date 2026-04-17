@@ -72,7 +72,6 @@ export function AuthProvider({ children }) {
         };
         setUser(demoUser);
         localStorage.setItem('liftit_user', JSON.stringify(demoUser));
-        localStorage.setItem('liftit_token', 'demo-token');
         return demoUser;
     }, []);
 
@@ -85,12 +84,11 @@ export function AuthProvider({ children }) {
         } finally {
             setUser(null);
             localStorage.removeItem('liftit_user');
-            localStorage.removeItem('liftit_token');
             setIsLoading(false);
         }
     }, []);
 
-    const processOAuthCallback = useCallback(async (token) => {
+    const processOAuthCallback = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {

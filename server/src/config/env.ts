@@ -25,11 +25,19 @@ interface EnvConfig {
   };
 }
 
+if (!process.env.JWT_SECRET) {
+  throw new Error("Missing JWT_SECRET in environment variables");
+}
+
+if (process.env.NODE_ENV === 'production' && (!process.env.FRONTEND_URL || !process.env.FRONTEND_URL.startsWith('https://'))) {
+  throw new Error("Missing or invalid FRONTEND_URL in production. Must be a secure https:// domain.");
+}
+
 const config: EnvConfig = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3001', 10),
   databaseUrl: process.env.DATABASE_URL || '',
-  jwtSecret: process.env.JWT_SECRET || 'default-secret-change-me',
+  jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   google: {

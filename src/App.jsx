@@ -67,7 +67,7 @@ function Sidebar() {
                         Liftit<span className="text-accent">.</span>
                     </h1>
                     <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-                        v3 · iOS ready
+                        Version 3.0
                     </p>
                 </div>
             </Link>

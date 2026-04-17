@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import passport from 'passport';
 import config from '../config/env.js';
 import { authService } from '../services/auth.service.js';
-import { authenticate, JwtPayload } from '../middleware/auth.js';
+import { authenticate, JwtPayload, extractToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -22,7 +22,13 @@ router.get('/google/callback',
         return;
       }
       const token = await authService.createSession(user.userId, user.email);
-      res.redirect(`${config.frontendUrl}/auth/callback?token=${token}`);
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+      res.redirect(`${config.frontendUrl}/auth/callback`);
     } catch (error) {
       console.error('Google callback error:', error);
       res.redirect(`${config.frontendUrl}/login?error=server_error`);
@@ -46,7 +52,13 @@ router.get('/github/callback',
         return;
       }
       const token = await authService.createSession(user.userId, user.email);
-      res.redirect(`${config.frontendUrl}/auth/callback?token=${token}`);
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+      res.redirect(`${config.frontendUrl}/auth/callback`);
     } catch (error) {
       console.error('GitHub callback error:', error);
       res.redirect(`${config.frontendUrl}/login?error=server_error`);
@@ -62,9 +74,12 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
       res.status(401).json({ error: 'Session expired' });
       return;
     }
-    const user = await authService.validateSession(
-      req.headers.authorization!.split(' ')[1]
-    );
+    const token = extractToken(req);
+    if (!token) {
+      res.status(401).json({ error: 'Session expired' });
+      return;
+    }
+    const user = await authService.validateSession(token);
     if (!user) {
       res.status(401).json({ error: 'Session expired' });
       return;
@@ -83,8 +98,11 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
 
 router.post('/logout', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization!.split(' ')[1];
-    await authService.deleteSession(token);
+    const token = extractToken(req);
+    if (token) {
+      await authService.deleteSession(token);
+    }
+    res.clearCookie('token');
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);

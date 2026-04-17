@@ -134,7 +134,7 @@ export default function Settings() {
                 }
             }
             // Wipe everything local
-            ['liftit_data_v1', 'liftit_user', 'liftit_token', 'liftit_unit', 'liftit_last_sync']
+            ['liftit_data_v1', 'liftit_user', 'liftit_unit', 'liftit_last_sync']
                 .forEach((k) => localStorage.removeItem(k));
             await logout().catch(() => {});
             setDialog(null);
@@ -320,7 +320,7 @@ export default function Settings() {
             </button>
 
             <p className="pt-4 text-center font-mono text-xs text-zinc-600">
-                Liftit v3.0 · AI Edition · iOS ready
+                Liftit v3.0 · AI Edition
             </p>
 
             {/* Dialogs */}

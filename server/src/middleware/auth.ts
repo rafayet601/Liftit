@@ -11,15 +11,22 @@ export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
 }
 
-export const authenticate = (req: Request, res: Response, next: Function): void => {
+export const extractToken = (req: Request): string | null => {
   const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+  const match = req.headers.cookie?.match(/(?:^|;\s*)token=([^;]*)/);
+  return match ? match[1] : null;
+};
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+export const authenticate = (req: Request, res: Response, next: Function): void => {
+  const token = extractToken(req);
+
+  if (!token) {
     res.status(401).json({ error: 'No token provided' });
     return;
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as JwtPayload;
@@ -31,10 +38,9 @@ export const authenticate = (req: Request, res: Response, next: Function): void 
 };
 
 export const optionalAuth = (req: Request, res: Response, next: Function): void => {
-  const authHeader = req.headers.authorization;
+  const token = extractToken(req);
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
+  if (token) {
     try {
       const decoded = jwt.verify(token, config.jwtSecret) as JwtPayload;
       (req as AuthenticatedRequest).user = decoded;

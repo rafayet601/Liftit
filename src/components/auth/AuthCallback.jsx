@@ -25,7 +25,6 @@ export default function AuthCallback() {
             return;
         }
 
-        const token = searchParams.get('token');
         const errParam = searchParams.get('error');
 
         if (errParam) {
@@ -33,16 +32,11 @@ export default function AuthCallback() {
             return;
         }
 
-        if (token) {
-            localStorage.setItem('liftit_token', token);
-            processOAuthCallback(token)
-                .then(() => navigate('/', { replace: true }))
-                .catch((err) =>
-                    setError(err?.message || 'Authentication failed'),
-                );
-        } else {
-            navigate('/login', { replace: true });
-        }
+        processOAuthCallback()
+            .then(() => navigate('/', { replace: true }))
+            .catch((err) =>
+                setError(err?.message || 'Authentication failed'),
+            );
     }, [
         searchParams,
         navigate,

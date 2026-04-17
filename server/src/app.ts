@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import config from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { setupPassport } from './config/passport.js';
+import { extractToken } from './middleware/auth.js';
 import { createMcpServer, extractUserFromToken } from './mcp/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import authRoutes from './routes/auth.js';
@@ -13,6 +14,12 @@ import workoutRoutes from './routes/workouts.js';
 import exerciseRoutes from './routes/exercises.js';
 import programRoutes from './routes/programs.js';
 import aiRoutes from './ai/routes/ai.routes.js';
+import { z } from 'zod';
+
+const syncPayloadSchema = z.object({
+  workoutLogs: z.array(z.any()).max(50).optional(),
+  programs: z.array(z.any()).max(50).optional(),
+});
 
 const app: Express = express();
 
@@ -40,17 +47,22 @@ app.use('/api/ai', aiRoutes);
 
 app.post('/api/sync', async (req: Request, res: Response) => {
   try {
-    const { workoutLogs, programs } = req.body;
-    const authHeader = req.headers.authorization;
+    const parseResult = syncPayloadSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: 'Payload validation failed: Overly large arrays or invalid structure', details: parseResult.error.errors });
+      return;
+    }
+    const { workoutLogs, programs } = parseResult.data;
+    const token = extractToken(req);
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       res.status(401).json({ error: 'Authentication required' });
       return;
     }
 
     let decoded;
     try {
-      decoded = jwt.verify(authHeader.split(' ')[1], config.jwtSecret) as { userId: string };
+      decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
     } catch {
       res.status(401).json({ error: 'Invalid token' });
       return;
@@ -184,7 +196,8 @@ app.post('/api/sync', async (req: Request, res: Response) => {
 const mcpServer = createMcpServer();
 
 app.post('/api/mcp', async (req: Request, res: Response) => {
-  const user = extractUserFromToken(req.headers.authorization);
+  const token = extractToken(req);
+  const user = extractUserFromToken(`Bearer ${token}`);
   if (!user) {
     res.status(401).json({ error: 'Unauthorized - valid JWT token required' });
     return;
@@ -206,7 +219,8 @@ app.post('/api/mcp', async (req: Request, res: Response) => {
 });
 
 app.get('/api/mcp/sse', async (req: Request, res: Response) => {
-  const user = extractUserFromToken(req.headers.authorization);
+  const token = extractToken(req);
+  const user = extractUserFromToken(`Bearer ${token}`);
   if (!user) {
     res.status(401).json({ error: 'Unauthorized - valid JWT token required' });
     return;
@@ -240,7 +254,8 @@ app.get('/api/mcp/sse', async (req: Request, res: Response) => {
 });
 
 app.post('/api/mcp/message', async (req: Request, res: Response) => {
-  const user = extractUserFromToken(req.headers.authorization);
+  const token = extractToken(req);
+  const user = extractUserFromToken(`Bearer ${token}`);
   if (!user) {
     res.status(401).json({ error: 'Unauthorized - valid JWT token required' });
     return;

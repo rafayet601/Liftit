@@ -11,15 +11,12 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+    withCredentials: true,
     timeout: 3000,
 });
 
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('liftit_token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
         return config;
     },
     (error) => Promise.reject(error)
@@ -36,7 +33,6 @@ api.interceptors.response.use(
             // Don't clear credentials or redirect if in demo mode.
             // Demo tokens are fake and will always fail server validation.
             if (!isDemoMode) {
-                localStorage.removeItem('liftit_token');
                 localStorage.removeItem('liftit_user');
                 if (
                     typeof window !== 'undefined' &&
@@ -348,19 +344,17 @@ export const put = (endpoint, data, options = {}) => apiRequest('PUT', endpoint,
 export const del = (endpoint, options = {}) => apiRequest('DELETE', endpoint, null, options);
 
 export const setAuthToken = (token) => {
-    if (token) {
-        localStorage.setItem('liftit_token', token);
-    } else {
-        localStorage.removeItem('liftit_token');
-    }
+    // Deprecated: Tokens are managed automatically by HttpOnly cookies
 };
 
-export const getAuthToken = () => localStorage.getItem('liftit_token');
+export const getAuthToken = () => {
+    // Deprecated: Cannot read HttpOnly token from frontend; returns a mock value
+    return localStorage.getItem('liftit_user') ? 'cookie-based' : null;
+};
 
 export const isAuthenticated = () => {
-    const token = getAuthToken();
     const hasUser = localStorage.getItem('liftit_user');
-    return !!token || !!hasUser;
+    return !!hasUser || isDemoMode;
 };
 
 export default api;

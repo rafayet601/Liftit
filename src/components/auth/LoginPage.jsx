@@ -96,7 +96,7 @@ export default function LoginPage() {
 
                     <div className="space-y-8">
                         <div>
-                            <span className="eyebrow mb-3 inline-block">v3 · iOS ready</span>
+                            <span className="eyebrow mb-3 inline-block">Version 3.0</span>
                             <h1 className="text-[56px] font-extrabold leading-[1.02] tracking-tight">
                                 Train smarter.
                                 <br />
@@ -124,7 +124,7 @@ export default function LoginPage() {
                                 {
                                     icon: Flame,
                                     title: 'Built for the floor',
-                                    desc: 'Big buttons, haptic feedback, offline-first. Feels native on iOS.',
+                                    desc: 'Big buttons, haptic feedback, offline-first. Feels native and premium.',
                                 },
                             ].map((f) => (
                                 <li
