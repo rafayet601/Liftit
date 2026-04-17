@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String             @id @default(cuid())
+  email            String             @unique
+  name             String?
+  provider         String
+  providerId       String
+  emailVerified    DateTime?
+  image            String?
+  profile          Profile?
+  workoutLogs      WorkoutLog[]
+  programs         Program[]
+  mesocycles       Mesocycle[]
+  progressionRules ProgressionRule[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([provider, providerId])
+  @@index([email])
+}
+
+model Profile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName     String?
+  bio             String?
+  fitnessLevel    String   @default("intermediate")
+  primaryGoal     String   @default("strength")
+  experienceYears Int?
+  weight          Float?
+  height          Float?
+  birthDate       DateTime?
+  gender          String?
+  preferredUnits  String   @default("imperial")
+  measurementUnit String   @default("lbs")
+  activeMesocycleId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Exercise {
+  id           String       @id @default(cuid())
+  name         String
+  slug         String       @unique
+  description  String?
+  instructions String?
+  muscleGroup  String
+  secondaryMuscles String   @default("[]")
+  equipment    String?
+  difficulty   String       @default("intermediate")
+  imageUrl     String?
+  videoUrl     String?
+  isCompound   Boolean      @default(false)
+  isIsolation  Boolean      @default(false)
+  isCardio     Boolean      @default(false)
+  workoutSets  WorkoutSet[]
+  progressionRules ProgressionRule[]
+  programDayExercises ProgramDayExercise[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([muscleGroup])
+  @@index([equipment])
+  @@index([name])
+}
+
+model WorkoutLog {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programDayId String?
+  programDay  ProgramDay?  @relation(fields: [programDayId], references: [id])
+  name        String?
+  notes       String?
+  startedAt   DateTime     @default(now())
+  completedAt DateTime?
+  duration    Int?
+  isCompleted Boolean      @default(false)
+  mood        String?
+  energy      Int?
+  sets        WorkoutSet[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([startedAt])
+  @@index([userId, startedAt])
+}
+
+model WorkoutSet {
+  id           String     @id @default(cuid())
+  workoutLogId String
+  workoutLog   WorkoutLog @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+  exerciseId   String
+  exercise     Exercise   @relation(fields: [exerciseId], references: [id])
+  setNumber    Int
+  reps         Int?
+  weight       Float?
+  rpe          Float?
+  distance     Float?
+  duration     Int?
+  isWarmup     Boolean    @default(false)
+  isDropSet    Boolean    @default(false)
+  isFailure    Boolean    @default(false)
+  notes        String?
+  completedAt  DateTime   @default(now())
+
+  @@index([workoutLogId])
+  @@index([exerciseId])
+  @@index([workoutLogId, exerciseId])
+}
+
+model Program {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  goal        String
+  difficulty  String
+  durationWeeks Int
+  isActive    Boolean       @default(false)
+  isGenerated Boolean       @default(false)
+  mesocycleId String?
+  mesocycle   Mesocycle?    @relation(fields: [mesocycleId], references: [id])
+  programDays ProgramDay[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([mesocycleId])
+}
+
+model ProgramDay {
+  id          String     @id @default(cuid())
+  programId   String
+  program     Program    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  dayNumber   Int
+  name        String
+  description String?
+  focus       String?
+  isRestDay   Boolean    @default(false)
+  workoutLogs WorkoutLog[]
+  exercises   ProgramDayExercise[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@unique([programId, dayNumber])
+  @@index([programId])
+}
+
+model ProgramDayExercise {
+  id           String     @id @default(cuid())
+  programDayId String
+  programDay   ProgramDay @relation(fields: [programDayId], references: [id], onDelete: Cascade)
+  exerciseId   String
+  exercise     Exercise   @relation(fields: [exerciseId], references: [id])
+  order        Int
+  targetSets  Int?
+  targetReps  String?
+  targetRpe   Float?
+  restSeconds Int?
+  notes       String?
+
+  @@unique([programDayId, order])
+  @@index([programDayId])
+  @@index([exerciseId])
+}
+
+model Mesocycle {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  focus        String
+  durationWeeks Int
+  startDate    DateTime
+  endDate      DateTime?
+  isActive     Boolean      @default(false)
+  programs     Program[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([startDate])
+}
+
+model ProgressionRule {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId    String
+  exercise      Exercise @relation(fields: [exerciseId], references: [id])
+  progressionType String
+  incrementValue Float?
+  incrementPercent Float?
+  minReps       Int?
+  maxReps       Int?
+  targetRpe     Float?
+  deloadWeeks   Int?
+  isEnabled     Boolean  @default(true)
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+  @@index([exerciseId])
+}

@@ -1,0 +1,39 @@
+{
+    "appId": "com.liftit.app",
+    "appName": "Liftit",
+    "webDir": "dist",
+    "ios": {
+        "contentInset": "always",
+        "backgroundColor": "#09090b",
+        "scrollEnabled": true,
+        "preferredContentMode": "mobile",
+        "limitsNavigationsToAppBoundDomains": false
+    },
+    "server": {
+        "iosScheme": "liftit",
+        "androidScheme": "https"
+    },
+    "plugins": {
+        "StatusBar": {
+            "style": "DARK",
+            "backgroundColor": "#09090b",
+            "overlaysWebView": true
+        },
+        "Keyboard": {
+            "resize": "native",
+            "style": "DARK",
+            "resizeOnFullScreen": true
+        },
+        "SplashScreen": {
+            "launchShowDuration": 500,
+            "launchAutoHide": true,
+            "backgroundColor": "#09090b",
+            "androidSplashResourceName": "splash",
+            "androidScaleType": "CENTER_CROP",
+            "showSpinner": false,
+            "iosSpinnerStyle": "small",
+            "splashFullScreen": true,
+            "splashImmersive": true
+        }
+    }
+}
