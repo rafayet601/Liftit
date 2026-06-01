@@ -1,4 +1,5 @@
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS liftit;"
+-- Liftit Database Initialization
+-- (MYSQL_DATABASE env var creates the 'liftit' database automatically)
 
 -- Users table (OAuth)
 CREATE TABLE IF NOT EXISTS users (

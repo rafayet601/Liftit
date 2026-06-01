@@ -32,15 +32,7 @@ const MESO_PHASES = [
     { name: 'Deload', weeks: 1, tone: 'bg-sky-400/80', desc: 'Back-off week for recovery.' },
 ];
 
-const SAMPLE_WEEK = [
-    { day: 'Monday', focus: 'Push A', exercises: ['Bench Press', 'OHP', 'Lateral Raises', 'Triceps'] },
-    { day: 'Tuesday', focus: 'Pull A', exercises: ['Deadlift', 'Rows', 'Pull-ups', 'Biceps'] },
-    { day: 'Wednesday', focus: 'Rest', exercises: [] },
-    { day: 'Thursday', focus: 'Legs A', exercises: ['Squat', 'RDL', 'Leg Press', 'Calf Raises'] },
-    { day: 'Friday', focus: 'Push B', exercises: ['Incline Bench', 'DB Press', 'Cable Fly', 'Tricep Ext'] },
-    { day: 'Saturday', focus: 'Pull B', exercises: ['Barbell Row', 'Lat Pulldown', 'Face Pull', 'Curls'] },
-    { day: 'Sunday', focus: 'Rest', exercises: [] },
-];
+import { SAMPLE_WEEK } from '../services/demoData';
 
 export default function Program() {
     const [mode, setMode] = useState('view'); // 'view' | 'wizard'
@@ -76,6 +68,30 @@ export default function Program() {
         }
         return MESO_PHASES[MESO_PHASES.length - 1];
     }, [currentWeek]);
+
+    const planDays = useMemo(() => {
+        if (!meso) return [];
+        const days = meso.programDays || meso.aiProgram?.programDays;
+        if (days && days.length > 0) {
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            return dayNames.map((dayName, idx) => {
+                const dayData = days.find(d => d.dayOfWeek === idx + 1) || days[idx];
+                if (dayData) {
+                    return {
+                        day: dayName,
+                        focus: dayData.name || 'Training',
+                        exercises: dayData.exercises?.map(ex => ex.exercise?.name || ex.name).filter(Boolean) || []
+                    };
+                }
+                return {
+                    day: dayName,
+                    focus: 'Rest',
+                    exercises: []
+                };
+            });
+        }
+        return SAMPLE_WEEK;
+    }, [meso]);
 
     const handleGenerate = async () => {
         hapticMedium();
@@ -294,7 +310,7 @@ export default function Program() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {SAMPLE_WEEK.map((d) => {
+                    {planDays.map((d) => {
                         const today = new Date().getDay();
                         const dayIdx = [
                             'Sunday',

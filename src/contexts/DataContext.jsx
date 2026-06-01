@@ -65,7 +65,8 @@ export function DataProvider({ children }) {
 
         setIsSyncing(true);
         try {
-            const response = await migrateLocalData(data);
+            const currentData = loadData();
+            const response = await migrateLocalData(currentData);
             if (response.data) {
                 setLastSyncTime(new Date());
             }
@@ -74,7 +75,7 @@ export function DataProvider({ children }) {
         } finally {
             setIsSyncing(false);
         }
-    }, [data, isOnline]);
+    }, [isOnline]);
 
     const updateData = useCallback((updates) => {
         setData(prev => {

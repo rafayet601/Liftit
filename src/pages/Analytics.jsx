@@ -350,6 +350,80 @@ function useAnalytics() {
             { exercise: 'Overhead Press', weight: 70, reps: 5, date: 'Jan 12', rpe: 8 },
         ];
 
+        // Dynamic Strength Trend from Logs
+        const strengthTrend = (() => {
+            if (!has) return demoTrend;
+            const sortedLogs = [...logs].sort((a, b) => new Date(a.date) - new Date(b.date));
+            if (!sortedLogs.length) return demoTrend;
+
+            const getEpley1RM = (sets) => {
+                let max1RM = 0;
+                for (const s of sets || []) {
+                    const w = Number(s.weight) || 0;
+                    const r = Number(s.reps) || 0;
+                    if (w > 0 && r > 0) {
+                        const est = w * (1 + r / 30);
+                        if (est > max1RM) max1RM = est;
+                    }
+                }
+                return max1RM;
+            };
+
+            const getMaxForLift = (log, keywords) => {
+                const exercises = log.workout?.filter(ex => 
+                    keywords.some(kw => ex.name?.toLowerCase().includes(kw))
+                ) || [];
+                const allSets = exercises.flatMap(ex => ex.sets || []);
+                return getEpley1RM(allSets);
+            };
+
+            const liftKeywords = {
+                bench: ['bench press', 'bench'],
+                squat: ['squat'],
+                deadlift: ['deadlift', 'dead lift'],
+                ohp: ['overhead press', 'ohp', 'shoulder press']
+            };
+
+            const weeksMap = new Map();
+            for (const log of sortedLogs) {
+                const dateObj = new Date(log.date);
+                const day = dateObj.getDay();
+                const sunday = new Date(dateObj);
+                sunday.setDate(dateObj.getDate() - day);
+                const weekKey = sunday.toISOString().slice(5, 10); // MM-DD
+                if (!weeksMap.has(weekKey)) {
+                    weeksMap.set(weekKey, []);
+                }
+                weeksMap.get(weekKey).push(log);
+            }
+
+            const trend = [];
+            let lastVals = { bench: 0, squat: 0, deadlift: 0, ohp: 0 };
+            
+            for (const [weekKey, weekLogs] of weeksMap.entries()) {
+                const weekVals = { ...lastVals };
+                for (const lift of ['bench', 'squat', 'deadlift', 'ohp']) {
+                    let maxThisWeek = 0;
+                    for (const log of weekLogs) {
+                        const logMax = getMaxForLift(log, liftKeywords[lift]);
+                        if (logMax > maxThisWeek) maxThisWeek = logMax;
+                    }
+                    if (maxThisWeek > 0) {
+                        weekVals[lift] = Math.round(maxThisWeek * 10) / 10;
+                    }
+                }
+                lastVals = { ...weekVals };
+                trend.push({
+                    name: `Wk of ${weekKey}`,
+                    bench: weekVals.bench || 0,
+                    squat: weekVals.squat || 0,
+                    deadlift: weekVals.deadlift || 0,
+                    ohp: weekVals.ohp || 0
+                });
+            }
+            return trend.length > 0 ? trend : demoTrend;
+        })();
+
         // Weekly volume from logs
         const weekly = (() => {
             const out = [];
@@ -416,7 +490,7 @@ function useAnalytics() {
 
         return {
             has,
-            strengthTrend: demoTrend,
+            strengthTrend: strengthTrend,
             weeklyVolume: has
                 ? weekly
                 : [

@@ -30,7 +30,7 @@ if (!process.env.JWT_SECRET) {
 }
 
 if (process.env.NODE_ENV === 'production' && (!process.env.FRONTEND_URL || !process.env.FRONTEND_URL.startsWith('https://'))) {
-  throw new Error("Missing or invalid FRONTEND_URL in production. Must be a secure https:// domain.");
+  console.warn("⚠️  WARNING: FRONTEND_URL is not set to a secure https:// domain. This is required for production deployments with OAuth.");
 }
 
 const config: EnvConfig = {

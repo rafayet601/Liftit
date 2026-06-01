@@ -14,6 +14,7 @@ import {
     Calendar,
     Sparkles,
     Cog,
+    Scale,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { UnitProvider, useUnit } from './contexts/UnitContext';
@@ -44,7 +45,7 @@ import MobileNav from './components/layout/MobileNav';
    ----------------------------------------------------------------- */
 function Sidebar() {
     const location = useLocation();
-    const { unit } = useUnit();
+    const { unit, toggleUnit } = useUnit();
     const { user } = useAuth();
     const { openTrainer, openProgramGenerator } = useModal();
 
@@ -127,6 +128,24 @@ function Sidebar() {
                             Generate Plan
                         </span>
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            hapticSelection();
+                            toggleUnit();
+                        }}
+                        className="group flex w-full items-center justify-between rounded-xl px-4 py-3 text-zinc-400 transition-all hover:bg-white/5 hover:text-white"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Scale className="h-5 w-5 transition-transform group-hover:scale-110" />
+                            <span className="text-[14.5px] font-semibold tracking-tight">
+                                Weight Metrics
+                            </span>
+                        </div>
+                        <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-bold text-accent shadow-glow-sm">
+                            {unit.toUpperCase()}
+                        </span>
+                    </button>
                 </div>
             </nav>
 
@@ -190,6 +209,7 @@ function ModalContainer() {
    ----------------------------------------------------------------- */
 function Layout({ children }) {
     const { isOnline, isSyncing, lastSyncTime } = useOfflineSync();
+    const { unit, toggleUnit } = useUnit();
 
     return (
         <div className="relative min-h-dvh bg-ink-950 text-zinc-200">
@@ -200,6 +220,20 @@ function Layout({ children }) {
                 style={{ maskImage: 'radial-gradient(ellipse at center, #000 30%, transparent 70%)' }}
             />
             <Sidebar />
+
+            {/* Quick unit switcher at top right (floating glassmorphic design) */}
+            <button
+                type="button"
+                onClick={() => {
+                    hapticSelection();
+                    toggleUnit();
+                }}
+                className="fixed right-4 top-[calc(env(safe-area-inset-top)+1rem)] z-50 flex items-center gap-1.5 rounded-full border border-white/10 bg-ink-950/45 px-3 py-1.5 font-bold text-xs text-zinc-300 backdrop-blur-md transition-all hover:border-accent/40 hover:text-white md:right-8 md:top-8"
+                aria-label={`Switch weight metrics. Current unit: ${unit}`}
+            >
+                <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                <span>{unit.toUpperCase()}</span>
+            </button>
 
             <main className="relative flex-1 overflow-x-hidden pb-28 pt-safe md:ml-64 md:pb-10">
                 <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8 md:py-10">

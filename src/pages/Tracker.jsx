@@ -34,43 +34,7 @@ import {
 } from '../components/ui/Primitives';
 import { hapticSuccess, hapticMedium } from '../lib/platform';
 
-/* ---------- Sample fallback ---------- */
-const sampleWorkout = {
-    name: 'Push Day A',
-    mesocycle: 'Hypertrophy Block 1',
-    week: 2,
-    phase: 'Accumulation',
-    exercises: [
-        {
-            id: 1,
-            name: 'Bench Press',
-            target: { sets: 4, reps: 8, weight: 83.9 },
-            previousSession: { weight: 83.9, reps: 8, rpe: 8 },
-            muscles: ['Chest', 'Triceps'],
-        },
-        {
-            id: 2,
-            name: 'Overhead Press',
-            target: { sets: 3, reps: 10, weight: 43.1 },
-            previousSession: { weight: 43.1, reps: 10, rpe: 7 },
-            muscles: ['Shoulders'],
-        },
-        {
-            id: 3,
-            name: 'Incline DB Press',
-            target: { sets: 3, reps: 12, weight: 22.7 },
-            previousSession: { weight: 22.7, reps: 12, rpe: 8 },
-            muscles: ['Chest'],
-        },
-        {
-            id: 4,
-            name: 'Lateral Raises',
-            target: { sets: 4, reps: 15, weight: 9.1 },
-            previousSession: { weight: 9.1, reps: 15, rpe: 7 },
-            muscles: ['Shoulders'],
-        },
-    ],
-};
+import { sampleWorkout } from '../services/demoData';
 
 export default function Tracker() {
     const [workout, setWorkout] = useState(null);
@@ -121,6 +85,18 @@ export default function Tracker() {
                             exercises: [],
                         });
                     } else {
+                        const logs = loadData().logs || [];
+                        const findPreviousSession = (exerciseName) => {
+                            const sortedLogs = [...logs].sort((a, b) => new Date(b.date) - new Date(a.date));
+                            for (const log of sortedLogs) {
+                                const foundEx = log.workout?.find(e => e.name?.toLowerCase() === exerciseName?.toLowerCase());
+                                if (foundEx && foundEx.sets?.length > 0) {
+                                    return foundEx.sets[0];
+                                }
+                            }
+                            return null;
+                        };
+
                         setWorkout({
                             name: day.name,
                             mesocycle: res.data.name,
@@ -135,7 +111,7 @@ export default function Tracker() {
                                         reps: normalizeReps(ex.targetReps),
                                         weight: normalizeWeight(ex.targetWeight),
                                     },
-                                    previousSession: null,
+                                    previousSession: findPreviousSession(ex.exercise?.name),
                                     muscles: [ex.exercise?.muscle].filter(Boolean),
                                 })) || [],
                         });
@@ -293,8 +269,9 @@ export default function Tracker() {
                     console.warn('[Tracker] cloud save fallback:', err);
                     showToast('Saved locally — will sync when back online.', 'warning');
                 }
+            } else {
+                saveData({ ...data, logs: [...(data.logs || []), newLog] });
             }
-            saveData({ ...data, logs: [...(data.logs || []), newLog] });
             hapticSuccess();
             showToast('Workout saved.', 'success');
         } finally {
@@ -305,31 +282,31 @@ export default function Tracker() {
     const getRecommendation = (exercise) => {
         if (!exercise.previousSession) return null;
         const { rpe, weight } = exercise.previousSession;
+        const currentDisplayWeight = convertWeight(weight);
         const step = unit === 'kg' ? 2.5 : 5;
         if (rpe < 7) {
+            const suggested = Math.round((currentDisplayWeight + step) * 10) / 10;
             return {
                 type: 'increase',
-                suggestion: `Push to ${displayWeight(weight + step / displayUnitMultiplier())}${unit}`,
+                suggestion: `Push to ${suggested}${unit}`,
                 reasoning: `RPE ${rpe} was easy last session — add load.`,
             };
         }
         if (rpe > 9) {
+            const suggested = Math.round(Math.max(0, currentDisplayWeight - step) * 10) / 10;
             return {
                 type: 'decrease',
-                suggestion: `Back off to ${displayWeight(weight - step / displayUnitMultiplier())}${unit}`,
+                suggestion: `Back off to ${suggested}${unit}`,
                 reasoning: `RPE ${rpe} was near failure — manage fatigue.`,
             };
         }
+        const suggested = Math.round(currentDisplayWeight * 10) / 10;
         return {
             type: 'maintain',
-            suggestion: `Hold ${displayWeight(weight)}${unit} · aim for +1 rep`,
+            suggestion: `Hold ${suggested}${unit} · aim for +1 rep`,
             reasoning: `RPE ${rpe} is in the hypertrophy sweet spot.`,
         };
     };
-    // Helper only used locally — keeps intent readable above
-    function displayUnitMultiplier() {
-        return unit === 'kg' ? 1 : 2.20462;
-    }
 
     /* ---------- Render guards ---------- */
     if (loading) {

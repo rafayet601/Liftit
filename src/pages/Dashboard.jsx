@@ -328,19 +328,17 @@ export default function Dashboard() {
                             {plannedThisWeek.map((w) => (
                                 <li
                                     key={w.name}
-                                    className={`group flex items-center justify-between rounded-2xl border px-4 py-3 transition-all ${
-                                        w.isToday
-                                            ? 'border-accent/40 bg-accent/10'
-                                            : 'border-white/5 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
-                                    }`}
+                                    className={`group flex items-center justify-between rounded-2xl border px-4 py-3 transition-all ${w.isToday
+                                        ? 'border-accent/40 bg-accent/10'
+                                        : 'border-white/5 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]'
+                                        }`}
                                 >
                                     <div className="flex items-center gap-3">
                                         <div
-                                            className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                                                w.isToday
-                                                    ? 'bg-accent/20 text-accent'
-                                                    : 'bg-white/[0.03] text-zinc-400'
-                                            }`}
+                                            className={`flex h-10 w-10 items-center justify-center rounded-xl ${w.isToday
+                                                ? 'bg-accent/20 text-accent'
+                                                : 'bg-white/[0.03] text-zinc-400'
+                                                }`}
                                         >
                                             <Target className="h-5 w-5" />
                                         </div>
@@ -480,7 +478,10 @@ function buildWeeklySeries(dailyTarget) {
 }
 
 function buildMuscleBalance() {
-    return [
+    const stored = loadData();
+    const logs = stored?.logs || [];
+    
+    const demoData = [
         { muscle: 'Chest', volume: 85, target: 100 },
         { muscle: 'Back', volume: 92, target: 100 },
         { muscle: 'Shoulders', volume: 78, target: 100 },
@@ -488,4 +489,52 @@ function buildMuscleBalance() {
         { muscle: 'Hams', volume: 70, target: 100 },
         { muscle: 'Arms', volume: 88, target: 100 },
     ];
+
+    if (!logs.length) {
+        return demoData;
+    }
+
+    const volumes = {
+        Chest: 0,
+        Back: 0,
+        Shoulders: 0,
+        Quads: 0,
+        Hams: 0,
+        Arms: 0
+    };
+
+    const getMuscleGroup = (exerciseName) => {
+        const name = (exerciseName || '').toLowerCase();
+        if (name.includes('bench') || name.includes('chest') || name.includes('fly')) return 'Chest';
+        if (name.includes('row') || name.includes('pullup') || name.includes('pulldown') || name.includes('lat') || name.includes('back')) return 'Back';
+        if (name.includes('overhead') || name.includes('ohp') || name.includes('shoulder') || name.includes('lateral') || name.includes('delt')) return 'Shoulders';
+        if (name.includes('squat') || name.includes('quad') || name.includes('leg') || name.includes('lunge')) return 'Quads';
+        if (name.includes('deadlift') || name.includes('rdl') || name.includes('hams') || name.includes('curl') && (name.includes('leg') || name.includes('lying'))) return 'Hams';
+        if (name.includes('curl') || name.includes('tricep') || name.includes('bicep') || name.includes('arm') || name.includes('skull')) return 'Arms';
+        return 'Chest'; // Fallback
+    };
+
+    for (const log of logs) {
+        for (const ex of log.workout || []) {
+            const muscle = getMuscleGroup(ex.name);
+            const exVol = (ex.sets || []).reduce((sum, s) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
+            if (volumes[muscle] !== undefined) {
+                volumes[muscle] += exVol;
+            }
+        }
+    }
+
+    const maxVol = Math.max(...Object.values(volumes));
+    if (maxVol === 0) {
+        return demoData;
+    }
+
+    return Object.keys(volumes).map(muscle => {
+        const pct = Math.round((volumes[muscle] / maxVol) * 95);
+        return {
+            muscle,
+            volume: Math.max(10, pct),
+            target: 100
+        };
+    });
 }

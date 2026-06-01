@@ -1,0 +1,17 @@
+node_modules
+server/node_modules
+dist
+server/dist
+.git
+.github
+.DS_Store
+*.md
+!README.md
+.env
+.env.local
+.env.*.local
+server/.env
+*.swp
+*.swo
+.vscode
+.idea
