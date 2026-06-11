@@ -1,13 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginWithOAuth as oauthLogin, logout as oauthLogout, getSession, getStoredUser } from '../services/auth.service';
-import { isAuthenticated as checkAuth, getAuthToken, enableDemoMode, isInDemoMode } from '../lib/api';
+import {
+    loginWithOAuth as oauthLogin,
+    logout as oauthLogout,
+    getSession,
+    getStoredUser,
+} from '../services/auth.service';
+
+/**
+ * Optional account state. The app is fully usable signed-out (local-first);
+ * a user here just means cloud sync is available.
+ */
 
 const AuthContext = createContext({
     user: null,
     isAuthenticated: false,
     isLoading: true,
     loginWithOAuth: () => {},
-    loginAsDemo: () => {},
     logout: async () => {},
     processOAuthCallback: async () => {},
     error: null,
@@ -16,109 +24,68 @@ const AuthContext = createContext({
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [user, setUser] = useState(() => getStoredUser());
+    const [isLoading, setIsLoading] = useState(() => Boolean(getStoredUser()));
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        const initAuth = async () => {
-            const storedUser = getStoredUser();
-            if (storedUser) {
-                setUser(storedUser);
-            }
-
-            // If in demo mode, use stored user and skip server validation
-            if (isInDemoMode()) {
-                if (!storedUser) {
-                    setUser({ name: 'Demo Athlete', id: 'demo' });
-                }
-                setIsLoading(false);
-                return;
-            }
-
-            if (checkAuth()) {
-                try {
-                    const response = await getSession();
-                    if (response.data?.user) {
-                        setUser(response.data.user);
-                    }
-                } catch (err) {
-                    if (isInDemoMode()) {
-                        setUser(storedUser || { name: 'Demo Athlete', id: 'demo' });
-                    } else {
-                        console.warn('Session check failed:', err);
-                    }
-                }
-            }
-            setIsLoading(false);
+        // Validate the cached session in the background (only if one exists).
+        if (!getStoredUser()) return undefined;
+        let cancelled = false;
+        getSession()
+            .then((res) => {
+                if (!cancelled && res.data?.user) setUser(res.data.user);
+            })
+            .catch(() => {
+                // 401 interceptor clears the cache; reflect it here.
+                if (!cancelled && !getStoredUser()) setUser(null);
+            })
+            .finally(() => {
+                if (!cancelled) setIsLoading(false);
+            });
+        return () => {
+            cancelled = true;
         };
-
-        initAuth();
     }, []);
 
-    const handleOAuthLogin = useCallback((provider) => {
-        oauthLogin(provider);
-    }, []);
-
-    const loginAsDemo = useCallback(() => {
-        enableDemoMode();
-        const demoUser = {
-            id: 'demo-user',
-            name: 'Demo Athlete',
-            email: 'demo@liftit.app',
-            level: 'Intermediate',
-            unit: 'kg',
-            isDemo: true,
-        };
-        setUser(demoUser);
-        localStorage.setItem('liftit_user', JSON.stringify(demoUser));
-        return demoUser;
+    useEffect(() => {
+        const onExpired = () => setUser(null);
+        window.addEventListener('liftit:auth-expired', onExpired);
+        return () => window.removeEventListener('liftit:auth-expired', onExpired);
     }, []);
 
     const handleLogout = useCallback(async () => {
-        setIsLoading(true);
         try {
             await oauthLogout();
-        } catch (err) {
-            console.error('Logout error:', err);
         } finally {
             setUser(null);
-            localStorage.removeItem('liftit_user');
-            setIsLoading(false);
         }
     }, []);
 
     const processOAuthCallback = useCallback(async () => {
-        setIsLoading(true);
         setError(null);
         try {
             const response = await getSession();
-            if (response.data?.user) {
-                setUser(response.data.user);
-                localStorage.setItem('liftit_user', JSON.stringify(response.data.user));
-            }
+            if (response.data?.user) setUser(response.data.user);
             return response;
         } catch (err) {
             setError(err.message || 'Authentication failed');
             throw err;
-        } finally {
-            setIsLoading(false);
         }
     }, []);
 
-    const value = {
-        user,
-        isAuthenticated: !!user || isInDemoMode(),
-        isLoading,
-        loginWithOAuth: handleOAuthLogin,
-        loginAsDemo,
-        logout: handleLogout,
-        processOAuthCallback,
-        error,
-    };
-
     return (
-        <AuthContext.Provider value={value}>
+        <AuthContext.Provider
+            value={{
+                user,
+                isAuthenticated: Boolean(user),
+                isLoading,
+                loginWithOAuth: oauthLogin,
+                logout: handleLogout,
+                processOAuthCallback,
+                error,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
