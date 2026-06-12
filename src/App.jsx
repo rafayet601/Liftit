@@ -4,79 +4,85 @@ import {
     Routes,
     Route,
     Link,
+    Navigate,
     useLocation,
-    useNavigate,
 } from 'react-router-dom';
 import {
     LayoutDashboard,
     Dumbbell,
     BarChart3,
     Calendar,
-    Sparkles,
+    History as HistoryIcon,
+    MessageCircle,
     Cog,
-    Scale,
+    CloudOff,
+    RefreshCw,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { UnitProvider, useUnit } from './contexts/UnitContext';
+import { UnitProvider } from './contexts/UnitContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { DataProvider } from './contexts/DataContext';
 import { ModalProvider, useModal } from './contexts/ModalContext';
-import ProtectedRoute from './components/auth/ProtectedRoute';
+import { DataProvider, useSettings, useSyncStatus } from './data/DataProvider';
 import TrainerChat from './components/ai/TrainerChat';
-import ProgramGenerator from './components/ai/ProgramGenerator';
-import ConnectionStatus from './components/ui/ConnectionStatus';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
-import { useOfflineSync } from './hooks/useOfflineSync';
 import { initNativeShell, isStandalone, hapticSelection } from './lib/platform';
 
-import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
+import Workout from './pages/Workout';
+import History from './pages/History';
 import Program from './pages/Program';
-import Tracker from './pages/Tracker';
-import Analytics from './pages/Analytics';
-import Login from './pages/Login';
+import Progress from './pages/Progress';
+import Onboarding from './pages/Onboarding';
 import SettingsPage from './pages/Settings';
+import Login from './pages/Login';
 import AuthCallback from './components/auth/AuthCallback';
-
 import MobileNav from './components/layout/MobileNav';
 
+export const NAV_ITEMS = [
+    { name: 'Home', icon: LayoutDashboard, path: '/' },
+    { name: 'Workout', icon: Dumbbell, path: '/workout' },
+    { name: 'History', icon: HistoryIcon, path: '/history' },
+    { name: 'Program', icon: Calendar, path: '/program' },
+    { name: 'Progress', icon: BarChart3, path: '/progress' },
+];
+
 /* -----------------------------------------------------------------
-   Sidebar (desktop only)
+   Sidebar (desktop)
    ----------------------------------------------------------------- */
 function Sidebar() {
     const location = useLocation();
-    const { unit, toggleUnit } = useUnit();
     const { user } = useAuth();
-    const { openTrainer, openProgramGenerator } = useModal();
+    const settings = useSettings();
+    const { openTrainer } = useModal();
+    const { isOnline, isSyncing, pendingOps } = useSyncStatus();
 
-    const primary = [
-        { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
-        { name: 'Tracker', icon: Dumbbell, path: '/tracker' },
-        { name: 'Program', icon: Calendar, path: '/program' },
-        { name: 'Analytics', icon: BarChart3, path: '/analytics' },
-    ];
+    const displayName = user?.name || settings.name || 'Athlete';
 
     return (
-        <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/5 bg-ink-950/70 p-5 backdrop-blur-xl md:flex">
+        <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/[0.07] bg-ink-950 p-5 md:flex">
             {/* Brand */}
             <Link to="/" className="group mb-10 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent text-ink-950 shadow-glow-sm transition-transform group-hover:-rotate-6">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-ember text-ink-950 transition-transform group-hover:-rotate-6">
                     <Dumbbell className="h-5 w-5" strokeWidth={2.4} />
                 </div>
                 <div>
-                    <h1 className="text-[22px] font-extrabold tracking-tight text-white">
+                    <h1 className="font-display text-[22px] font-bold tracking-tight text-white">
                         Liftit<span className="text-accent">.</span>
                     </h1>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-                        Version 3.0
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-ink-500">
+                        Forge · v4
                     </p>
                 </div>
             </Link>
 
             {/* Primary nav */}
-            <nav className="flex-1 space-y-1.5">
-                {primary.map((item) => {
-                    const isActive = location.pathname === item.path;
+            <nav className="flex-1 space-y-1">
+                {NAV_ITEMS.map((item) => {
+                    const isActive =
+                        item.path === '/'
+                            ? location.pathname === '/'
+                            : location.pathname.startsWith(item.path);
                     return (
                         <Link
                             key={item.path}
@@ -84,22 +90,16 @@ function Sidebar() {
                             onClick={() => hapticSelection()}
                             aria-current={isActive ? 'page' : undefined}
                             className={clsx(
-                                'group relative flex items-center gap-3 rounded-xl px-4 py-3 transition-all',
+                                'group relative flex items-center gap-3 rounded-xl px-4 py-2.5 transition-colors',
                                 isActive
                                     ? 'bg-accent/10 text-accent'
-                                    : 'text-zinc-400 hover:bg-white/5 hover:text-white',
+                                    : 'text-ink-400 hover:bg-white/5 hover:text-white',
                             )}
                         >
                             {isActive && (
-                                <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-accent shadow-[0_0_12px_rgba(190,242,100,0.5)]" />
+                                <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-accent" />
                             )}
-                            <item.icon
-                                className={clsx(
-                                    'h-5 w-5 transition-transform group-hover:scale-110',
-                                    isActive && 'text-accent',
-                                )}
-                                strokeWidth={isActive ? 2.3 : 2}
-                            />
+                            <item.icon className="h-5 w-5" strokeWidth={isActive ? 2.3 : 2} />
                             <span className="text-[14.5px] font-semibold tracking-tight">
                                 {item.name}
                             </span>
@@ -107,236 +107,113 @@ function Sidebar() {
                     );
                 })}
 
-                <div className="mt-6 border-t border-white/5 pt-6 space-y-2">
+                <div className="mt-6 space-y-1 border-t border-white/[0.07] pt-6">
                     <button
                         type="button"
                         onClick={openTrainer}
-                        className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-gradient-to-r from-accent/10 to-transparent px-4 py-3 text-accent transition-all hover:border-accent/40 hover:from-accent/20"
+                        className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent/5 px-4 py-2.5 text-accent transition-colors hover:bg-accent/10"
                     >
-                        <Sparkles className="h-5 w-5 transition-transform group-hover:rotate-12" />
-                        <span className="text-[14.5px] font-bold tracking-tight">
-                            AI Trainer
-                        </span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={openProgramGenerator}
-                        className="group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-zinc-400 transition-all hover:bg-white/5 hover:text-white"
-                    >
-                        <Calendar className="h-5 w-5 transition-transform group-hover:scale-110" />
-                        <span className="text-[14.5px] font-semibold tracking-tight">
-                            Generate Plan
-                        </span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            hapticSelection();
-                            toggleUnit();
-                        }}
-                        className="group flex w-full items-center justify-between rounded-xl px-4 py-3 text-zinc-400 transition-all hover:bg-white/5 hover:text-white"
-                    >
-                        <div className="flex items-center gap-3">
-                            <Scale className="h-5 w-5 transition-transform group-hover:scale-110" />
-                            <span className="text-[14.5px] font-semibold tracking-tight">
-                                Weight Metrics
-                            </span>
-                        </div>
-                        <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-bold text-accent shadow-glow-sm">
-                            {unit.toUpperCase()}
-                        </span>
+                        <MessageCircle className="h-5 w-5" />
+                        <span className="text-[14.5px] font-bold tracking-tight">Coach</span>
                     </button>
                 </div>
             </nav>
 
-            {/* User card */}
+            {/* Sync status */}
+            {(!isOnline || pendingOps > 0) && (
+                <div className="mb-3 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-xs text-ink-400">
+                    {isSyncing ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin text-steel" />
+                    ) : (
+                        <CloudOff className="h-3.5 w-3.5 text-steel" />
+                    )}
+                    {isSyncing
+                        ? 'Syncing…'
+                        : isOnline
+                          ? `${pendingOps} change${pendingOps === 1 ? '' : 's'} pending`
+                          : 'Offline — saved on device'}
+                </div>
+            )}
+
+            {/* User card → Settings */}
             <Link
                 to="/settings"
-                className="group mt-6 flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-3 transition-all hover:border-accent/30"
+                className="group flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-accent/30"
             >
                 <div className="flex h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
                     {user?.image ? (
-                        <img
-                            src={user.image}
-                            alt={user.name}
-                            className="h-full w-full object-cover"
-                        />
+                        <img src={user.image} alt={displayName} className="h-full w-full object-cover" />
                     ) : (
                         <div className="flex h-full w-full items-center justify-center bg-accent/10 font-bold text-accent">
-                            {user?.name?.[0]?.toUpperCase() || 'U'}
+                            {displayName[0]?.toUpperCase() || 'A'}
                         </div>
                     )}
                 </div>
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13.5px] font-bold text-white">
-                        {user?.name || 'Athlete'}
-                    </p>
-                    <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500">
-                        {unit} · v3
+                    <p className="truncate text-[13.5px] font-bold text-white">{displayName}</p>
+                    <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-ink-500">
+                        {user ? 'Synced account' : 'On this device'}
                     </p>
                 </div>
-                <Cog className="h-4 w-4 text-zinc-500 transition-colors group-hover:text-accent" />
+                <Cog className="h-4 w-4 text-ink-500 transition-colors group-hover:text-accent" />
             </Link>
         </aside>
     );
 }
 
 /* -----------------------------------------------------------------
-   Global modal container
-   ----------------------------------------------------------------- */
-function ModalContainer() {
-    const { showTrainer, showProgramGenerator, closeTrainer, closeProgramGenerator } = useModal();
-    const navigate = useNavigate();
-
-    return (
-        <>
-            {showTrainer && <TrainerChat onClose={closeTrainer} />}
-            {showProgramGenerator && (
-                <ProgramGenerator
-                    onComplete={() => {
-                        closeProgramGenerator();
-                        navigate('/program');
-                    }}
-                    onClose={closeProgramGenerator}
-                />
-            )}
-        </>
-    );
-}
-
-/* -----------------------------------------------------------------
-   Main Layout
+   Layout + onboarding gate
    ----------------------------------------------------------------- */
 function Layout({ children }) {
-    const { isOnline, isSyncing, lastSyncTime } = useOfflineSync();
-    const { unit, toggleUnit } = useUnit();
+    const settings = useSettings();
+    const location = useLocation();
+
+    if (!settings.onboarded) {
+        return <Navigate to="/onboarding" replace state={{ from: location.pathname }} />;
+    }
 
     return (
-        <div className="relative min-h-dvh bg-ink-950 text-zinc-200">
-            {/* Subtle grid background */}
-            <div
-                aria-hidden
-                className="pointer-events-none fixed inset-0 -z-10 bg-grid-faint bg-grid opacity-[0.35]"
-                style={{ maskImage: 'radial-gradient(ellipse at center, #000 30%, transparent 70%)' }}
-            />
+        <div className="relative min-h-dvh bg-ink-950 text-ink-200">
             <Sidebar />
-
-            {/* Quick unit switcher at top right (floating glassmorphic design) */}
-            <button
-                type="button"
-                onClick={() => {
-                    hapticSelection();
-                    toggleUnit();
-                }}
-                className="fixed right-4 top-[calc(env(safe-area-inset-top)+1rem)] z-50 flex items-center gap-1.5 rounded-full border border-white/10 bg-ink-950/45 px-3 py-1.5 font-bold text-xs text-zinc-300 backdrop-blur-md transition-all hover:border-accent/40 hover:text-white md:right-8 md:top-8"
-                aria-label={`Switch weight metrics. Current unit: ${unit}`}
-            >
-                <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                <span>{unit.toUpperCase()}</span>
-            </button>
-
             <main className="relative flex-1 overflow-x-hidden pb-28 pt-safe md:ml-64 md:pb-10">
                 <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8 md:py-10">
                     {children}
                 </div>
             </main>
-
             <MobileNav />
-            <ModalContainer />
-            <ConnectionStatus
-                isOnline={isOnline}
-                isSyncing={isSyncing}
-                lastSyncTime={lastSyncTime}
-            />
+            <TrainerModal />
         </div>
     );
 }
 
-/* -----------------------------------------------------------------
-   Global auth-expired listener (soft SPA redirect on 401)
-   ----------------------------------------------------------------- */
-function AuthEventBridge() {
-    const navigate = useNavigate();
-    const location = useLocation();
-
-    useEffect(() => {
-        const onExpired = () => {
-            if (location.pathname !== '/login') {
-                navigate('/login', {
-                    replace: true,
-                    state: { from: location.pathname + location.search },
-                });
-            }
-        };
-        window.addEventListener('liftit:auth-expired', onExpired);
-        return () => window.removeEventListener('liftit:auth-expired', onExpired);
-    }, [navigate, location]);
-
-    return null;
+function TrainerModal() {
+    const { showTrainer, closeTrainer } = useModal();
+    return showTrainer ? <TrainerChat onClose={closeTrainer} /> : null;
 }
 
 /* -----------------------------------------------------------------
-   Routes
+   Routes — local-first: nothing requires login. /login exists for sync.
    ----------------------------------------------------------------- */
 function AppRoutes() {
+    const page = (Component) => (
+        <Layout>
+            <Component />
+        </Layout>
+    );
     return (
-        <>
-            <AuthEventBridge />
-            <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/auth/callback" element={<AuthCallback />} />
-                <Route
-                    path="/"
-                    element={
-                        <ProtectedRoute>
-                            <Layout>
-                                <Dashboard />
-                            </Layout>
-                        </ProtectedRoute>
-                    }
-                />
-                <Route
-                    path="/tracker"
-                    element={
-                        <ProtectedRoute>
-                            <Layout>
-                                <Tracker />
-                            </Layout>
-                        </ProtectedRoute>
-                    }
-                />
-                <Route
-                    path="/program"
-                    element={
-                        <ProtectedRoute>
-                            <Layout>
-                                <Program />
-                            </Layout>
-                        </ProtectedRoute>
-                    }
-                />
-                <Route
-                    path="/analytics"
-                    element={
-                        <ProtectedRoute>
-                            <Layout>
-                                <Analytics />
-                            </Layout>
-                        </ProtectedRoute>
-                    }
-                />
-                <Route
-                    path="/settings"
-                    element={
-                        <ProtectedRoute>
-                            <Layout>
-                                <SettingsPage />
-                            </Layout>
-                        </ProtectedRoute>
-                    }
-                />
-            </Routes>
-        </>
+        <Routes>
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/" element={page(Home)} />
+            <Route path="/workout" element={page(Workout)} />
+            <Route path="/history" element={page(History)} />
+            <Route path="/history/:id" element={page(History)} />
+            <Route path="/program" element={page(Program)} />
+            <Route path="/progress" element={page(Progress)} />
+            <Route path="/settings" element={page(SettingsPage)} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
     );
 }
 
@@ -346,7 +223,6 @@ function AppRoutes() {
 function NativeShell() {
     useEffect(() => {
         initNativeShell();
-        // Hint scroll behaviour on iOS standalone
         if (isStandalone()) {
             document.documentElement.classList.add('is-standalone');
         }
@@ -357,8 +233,8 @@ function NativeShell() {
 export default function App() {
     return (
         <ErrorBoundary>
-            <AuthProvider>
-                <DataProvider>
+            <DataProvider>
+                <AuthProvider>
                     <UnitProvider>
                         <ModalProvider>
                             <ToastProvider>
@@ -369,8 +245,8 @@ export default function App() {
                             </ToastProvider>
                         </ModalProvider>
                     </UnitProvider>
-                </DataProvider>
-            </AuthProvider>
+                </AuthProvider>
+            </DataProvider>
         </ErrorBoundary>
     );
 }

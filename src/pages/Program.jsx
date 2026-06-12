@@ -1,196 +1,99 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
-    Check,
-    ChevronRight,
-    ChevronLeft,
-    Sparkles,
     Calendar,
-    Target,
-    Dumbbell,
-    TrendingUp,
+    Sparkles,
     Play,
+    Plus,
+    Repeat,
+    Trash2,
+    ChevronDown,
+    Info,
+    Minus,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { loadData, saveData } from '../lib/store';
-import { generateProgram } from '../services/program.service';
+import { db } from '../data/db';
+import { useActiveProgram } from '../data/DataProvider';
+import { generateProgram, currentProgramWeek, phaseForWeek, scaleTargetsForWeek, GOALS } from '../engine/generator';
+import ExercisePicker from '../components/workout/ExercisePicker';
+import { Card, Chip, PageHeader, ProgressBar, Segmented, Sheet } from '../components/ui/Primitives';
 import { useToast } from '../components/ui/Toast';
-import {
-    Card,
-    PageHeader,
-    Chip,
-    ProgressBar,
-    LoadingRing,
-    EmptyState,
-} from '../components/ui/Primitives';
 import { hapticMedium, hapticSuccess } from '../lib/platform';
 
-const MESO_PHASES = [
-    { name: 'Accumulation', weeks: 2, tone: 'bg-accent/80', desc: 'High volume, moderate intensity.' },
-    { name: 'Intensification', weeks: 2, tone: 'bg-amber-400/80', desc: 'Moderate volume, rising intensity.' },
-    { name: 'Realization', weeks: 1, tone: 'bg-orange-400/80', desc: 'Low volume, peak intensity.' },
-    { name: 'Deload', weeks: 1, tone: 'bg-sky-400/80', desc: 'Back-off week for recovery.' },
-];
-
-import { SAMPLE_WEEK } from '../services/demoData';
-
+/**
+ * Program — view + edit the active block, or run the generation wizard.
+ * Generation is the deterministic engine: instant and explainable.
+ */
 export default function Program() {
-    const [mode, setMode] = useState('view'); // 'view' | 'wizard'
-    const [meso, setMeso] = useState(null);
-    const [currentWeek, setCurrentWeek] = useState(1);
-    const [wizardStep, setWizardStep] = useState(1);
-    const [config, setConfig] = useState({
-        experience: 'Intermediate',
-        days: 4,
-        focus: 'Hypertrophy',
-    });
-    const [generating, setGenerating] = useState(false);
-    const navigate = useNavigate();
-    const { showToast } = useToast();
+    const program = useActiveProgram();
+    const [params, setParams] = useSearchParams();
+    const wizardOpen = params.get('new') === '1' || !program;
 
-    useEffect(() => {
-        const data = loadData();
-        if (data.currentMesocycle?.active) {
-            setMeso(data.currentMesocycle);
-            setCurrentWeek(data.currentMesocycle.currentWeek || 1);
-            setMode('view');
-        } else {
-            setMode('wizard');
-            setWizardStep(1);
-        }
-    }, []);
-
-    const currentPhase = useMemo(() => {
-        let count = 0;
-        for (const p of MESO_PHASES) {
-            count += p.weeks;
-            if (currentWeek <= count) return p;
-        }
-        return MESO_PHASES[MESO_PHASES.length - 1];
-    }, [currentWeek]);
-
-    const planDays = useMemo(() => {
-        if (!meso) return [];
-        const days = meso.programDays || meso.aiProgram?.programDays;
-        if (days && days.length > 0) {
-            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-            return dayNames.map((dayName, idx) => {
-                const dayData = days.find(d => d.dayOfWeek === idx + 1) || days[idx];
-                if (dayData) {
-                    return {
-                        day: dayName,
-                        focus: dayData.name || 'Training',
-                        exercises: dayData.exercises?.map(ex => ex.exercise?.name || ex.name).filter(Boolean) || []
-                    };
-                }
-                return {
-                    day: dayName,
-                    focus: 'Rest',
-                    exercises: []
-                };
-            });
-        }
-        return SAMPLE_WEEK;
-    }, [meso]);
-
-    const handleGenerate = async () => {
-        hapticMedium();
-        setGenerating(true);
-        const split = config.days === 3 ? 'Full Body' : config.days >= 5 ? 'PPL' : 'Upper / Lower';
-        let isOffline = false;
-        let programPayload = null;
-        try {
-            const res = await generateProgram({
-                experience: config.experience,
-                days: config.days,
-                focus: config.focus,
-            });
-            programPayload = res.data;
-            isOffline = !!res.fromCache;
-        } catch (err) {
-            console.warn('[Program] generate fell back to offline:', err);
-            isOffline = true;
-        }
-
-        const newMeso = {
-            active: true,
-            name: `${config.focus} Block 1`,
-            weeks: 6,
-            currentWeek: 1,
-            daysPerWeek: config.days,
-            focus: config.focus,
-            startDate: new Date().toISOString(),
-            split,
-            phases: MESO_PHASES,
-            aiGenerated: true,
-            aiProgram: programPayload,
-        };
-        const current = loadData();
-        saveData({ ...current, currentMesocycle: newMeso });
-        setMeso(newMeso);
-        setCurrentWeek(1);
-        setMode('view');
-        setGenerating(false);
-        hapticSuccess();
-        showToast(
-            isOffline ? 'Program created (offline template)' : 'Program generated',
-            isOffline ? 'warning' : 'success',
-        );
-    };
-
-    if (mode === 'wizard') {
+    if (wizardOpen) {
         return (
             <Wizard
-                step={wizardStep}
-                setStep={setWizardStep}
-                config={config}
-                setConfig={setConfig}
-                generating={generating}
-                onGenerate={handleGenerate}
-                onCancel={() => (meso ? setMode('view') : navigate('/'))}
+                hasExisting={Boolean(program)}
+                onDone={() => setParams({})}
+                onCancel={program ? () => setParams({}) : null}
             />
         );
     }
+    return <ProgramView program={program} onNew={() => setParams({ new: '1' })} />;
+}
 
-    if (!meso) {
-        return (
-            <EmptyState
-                icon={Calendar}
-                title="No active program"
-                description="Generate a tailored mesocycle in about a minute."
-                action={
-                    <button type="button" onClick={() => setMode('wizard')} className="btn-primary">
-                        <Sparkles className="h-4 w-4" /> Generate Program
-                    </button>
-                }
-            />
-        );
-    }
+/* ==================================================================
+   Program view + editing
+   ================================================================== */
+function ProgramView({ program, onNew }) {
+    const { showToast } = useToast();
+    const week = currentProgramWeek(program);
+    const [viewWeek, setViewWeek] = useState(week);
+    const [editTarget, setEditTarget] = useState(null); // { dayNumber, index } | { dayNumber, add: true }
+    const [showWhy, setShowWhy] = useState(false);
+    const phase = phaseForWeek(viewWeek, program.durationWeeks);
 
-    const totalWeeks = meso.weeks || 6;
-    const weekPct = (currentWeek / totalWeeks) * 100;
+    const saveDays = (mutator) => {
+        const next = JSON.parse(JSON.stringify(program));
+        mutator(next);
+        db.programs.save(next);
+    };
+
+    const replaceExercise = (exercise) => {
+        saveDays((p) => {
+            const day = p.days.find((d) => d.dayNumber === editTarget.dayNumber);
+            if (!day) return;
+            if (editTarget.add) {
+                day.exercises.push({
+                    exerciseId: exercise.id,
+                    order: day.exercises.length + 1,
+                    targetSets: 3,
+                    targetRepsMin: 8,
+                    targetRepsMax: 12,
+                    targetRpe: 8,
+                    restSec: 120,
+                });
+            } else {
+                day.exercises[editTarget.index].exerciseId = exercise.id;
+            }
+        });
+        setEditTarget(null);
+        showToast('Program updated.', 'success');
+    };
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
             <PageHeader
-                eyebrow="Program"
-                title={meso.name}
-                description={`${meso.split} · ${meso.daysPerWeek} days/wk · ${totalWeeks} weeks`}
-                icon={Target}
+                eyebrow="Plan"
+                title={program.name}
+                description={`${program.daysPerWeek} days/wk · ${program.durationWeeks} weeks · started ${new Date(program.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                icon={Calendar}
                 actions={
                     <>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setWizardStep(1);
-                                setMode('wizard');
-                            }}
-                            className="btn-outline"
-                        >
-                            <Sparkles className="h-4 w-4" /> New
+                        <button type="button" onClick={onNew} className="btn-outline">
+                            <Sparkles className="h-4 w-4" /> New block
                         </button>
-                        <Link to="/tracker" className="btn-primary">
-                            <Play className="h-4 w-4" /> Start today
+                        <Link to="/workout" className="btn-primary">
+                            <Play className="h-4 w-4" /> Train
                         </Link>
                     </>
                 }
@@ -198,424 +101,291 @@ export default function Program() {
 
             {/* Phase timeline */}
             <Card>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <div className="eyebrow mb-1">Mesocycle phases</div>
-                        <h2 className="text-xl font-bold tracking-tight text-white">
-                            {currentPhase.name} phase
+                        <div className="eyebrow mb-1">
+                            Week {week} of {program.durationWeeks}
+                        </div>
+                        <h2 className="font-display text-xl font-bold text-white">
+                            {phaseForWeek(week, program.durationWeeks).name} phase
                         </h2>
-                        <p className="mt-1 text-sm text-zinc-400">{currentPhase.desc}</p>
+                        <p className="mt-1 text-sm text-ink-400">
+                            {phaseForWeek(week, program.durationWeeks).blurb}
+                        </p>
                     </div>
-                    <Chip tone="accent">
-                        Week {currentWeek} / {totalWeeks}
-                    </Chip>
-                </div>
-
-                <div className="flex h-3 overflow-hidden rounded-full bg-white/5">
-                    {MESO_PHASES.map((p, i) => {
-                        const isCurrent = currentPhase.name === p.name;
-                        return (
-                            <div
-                                key={p.name}
-                                className={clsx(
-                                    'h-full transition-all duration-500',
-                                    isCurrent ? p.tone : 'bg-white/5',
-                                    i !== MESO_PHASES.length - 1 && 'border-r border-ink-950',
-                                )}
-                                style={{ flex: p.weeks }}
-                                aria-label={p.name}
-                            />
-                        );
-                    })}
-                </div>
-                <div className="mt-2 flex justify-between text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                    {MESO_PHASES.map((p) => (
-                        <span
-                            key={p.name}
-                            className={clsx(currentPhase.name === p.name && 'text-accent')}
-                        >
-                            {p.name}
-                        </span>
-                    ))}
-                </div>
-
-                <div className="mt-6">
-                    <ProgressBar value={weekPct} />
-                </div>
-            </Card>
-
-            {/* Week selector */}
-            <Card>
-                <div className="mb-4 flex items-center justify-between">
-                    <div>
-                        <div className="eyebrow mb-1">Week</div>
-                        <h3 className="text-lg font-bold tracking-tight text-white">
-                            Plan your block
-                        </h3>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <button
-                            type="button"
-                            onClick={() => setCurrentWeek((w) => Math.max(1, w - 1))}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white disabled:opacity-40"
-                            disabled={currentWeek <= 1}
-                            aria-label="Previous week"
-                        >
-                            <ChevronLeft className="h-4 w-4" />
+                    {program.rationale && (
+                        <button type="button" onClick={() => setShowWhy(true)} className="btn-ghost text-xs">
+                            <Info className="h-3.5 w-3.5" /> Why this program?
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setCurrentWeek((w) => Math.min(totalWeeks, w + 1))}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white disabled:opacity-40"
-                            disabled={currentWeek >= totalWeeks}
-                            aria-label="Next week"
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </button>
-                    </div>
+                    )}
                 </div>
-                <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-                    {Array.from({ length: totalWeeks }).map((_, i) => {
-                        const n = i + 1;
-                        const active = n === currentWeek;
+                <ProgressBar value={(week / program.durationWeeks) * 100} />
+                <div className="mt-3 flex gap-1.5 overflow-x-auto no-scrollbar">
+                    {Array.from({ length: program.durationWeeks }, (_, i) => i + 1).map((w) => {
+                        const p = phaseForWeek(w, program.durationWeeks);
                         return (
                             <button
+                                key={w}
                                 type="button"
-                                key={n}
-                                onClick={() => setCurrentWeek(n)}
+                                onClick={() => setViewWeek(w)}
                                 className={clsx(
-                                    'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border text-sm font-bold transition-all',
-                                    active
-                                        ? 'border-accent/40 bg-accent/10 text-accent shadow-glow-sm'
-                                        : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-white',
+                                    'flex shrink-0 flex-col items-center rounded-xl border px-3 py-2 transition-colors',
+                                    w === viewWeek
+                                        ? 'border-accent/50 bg-accent/10 text-accent'
+                                        : 'border-white/[0.07] bg-white/[0.02] text-ink-500 hover:text-white',
                                 )}
                             >
-                                W{n}
+                                <span className="text-xs font-bold">W{w}</span>
+                                <span className="text-[9px] uppercase tracking-wider">{p.name.slice(0, 5)}</span>
                             </button>
                         );
                     })}
                 </div>
             </Card>
 
-            {/* Week calendar */}
-            <Card>
-                <div className="mb-5 flex items-center justify-between">
-                    <div>
-                        <div className="eyebrow mb-1">This week · preview</div>
-                        <h3 className="text-lg font-bold tracking-tight text-white">
-                            Daily plan
-                        </h3>
-                    </div>
-                    <Chip>{meso.daysPerWeek} sessions</Chip>
+            {/* Week-adjusted day cards */}
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <h2 className="font-display text-lg font-bold text-white">
+                        Week {viewWeek} targets
+                    </h2>
+                    <Chip tone={phase.name === 'Deload' ? 'steel' : 'accent'}>{phase.name}</Chip>
                 </div>
+                {program.days.map((day) => (
+                    <DayCard
+                        key={day.dayNumber}
+                        day={day}
+                        viewWeek={viewWeek}
+                        durationWeeks={program.durationWeeks}
+                        onSwap={(index) => setEditTarget({ dayNumber: day.dayNumber, index })}
+                        onAdd={() => setEditTarget({ dayNumber: day.dayNumber, add: true })}
+                        onRemove={(index) =>
+                            saveDays((p) => {
+                                const d = p.days.find((x) => x.dayNumber === day.dayNumber);
+                                d.exercises.splice(index, 1);
+                                d.exercises.forEach((e, i) => {
+                                    e.order = i + 1;
+                                });
+                            })
+                        }
+                        onAdjustSets={(index, delta) =>
+                            saveDays((p) => {
+                                const e = p.days.find((x) => x.dayNumber === day.dayNumber).exercises[index];
+                                e.targetSets = Math.max(1, Math.min(8, e.targetSets + delta));
+                            })
+                        }
+                    />
+                ))}
+            </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {planDays.map((d) => {
-                        const today = new Date().getDay();
-                        const dayIdx = [
-                            'Sunday',
-                            'Monday',
-                            'Tuesday',
-                            'Wednesday',
-                            'Thursday',
-                            'Friday',
-                            'Saturday',
-                        ].indexOf(d.day);
-                        const isToday = dayIdx === today;
-                        const isRest = d.focus === 'Rest';
+            {editTarget && (
+                <ExercisePicker
+                    title={editTarget.add ? 'Add exercise' : 'Swap exercise'}
+                    onSelect={replaceExercise}
+                    onClose={() => setEditTarget(null)}
+                />
+            )}
+            {showWhy && (
+                <Sheet open title="Why this program" onClose={() => setShowWhy(false)}>
+                    <p className="text-sm leading-relaxed text-ink-300">{program.rationale}</p>
+                </Sheet>
+            )}
+        </div>
+    );
+}
+
+function DayCard({ day, viewWeek, durationWeeks, onSwap, onAdd, onRemove, onAdjustSets }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <Card padded={false} className="overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                className="flex w-full items-center justify-between gap-3 p-4 text-left"
+            >
+                <div className="min-w-0">
+                    <h3 className="truncate font-display text-base font-bold text-white">
+                        Day {day.dayNumber} · {day.name}
+                    </h3>
+                    <p className="text-xs text-ink-500">
+                        {day.exercises.length} exercises{day.focus ? ` · ${day.focus}` : ''}
+                    </p>
+                </div>
+                <ChevronDown className={clsx('h-5 w-5 shrink-0 text-ink-500 transition-transform', open && 'rotate-180')} />
+            </button>
+            {open && (
+                <div className="space-y-2 border-t border-white/[0.07] p-4">
+                    {day.exercises.map((target, index) => {
+                        const exercise = db.exercises.byId(target.exerciseId);
+                        const scaled = scaleTargetsForWeek(target, viewWeek, durationWeeks);
                         return (
                             <div
-                                key={d.day}
-                                className={clsx(
-                                    'relative rounded-2xl border p-4 transition-all',
-                                    isToday
-                                        ? 'border-accent/40 bg-accent/5'
-                                        : 'border-white/5 bg-white/[0.02]',
-                                    isRest && 'opacity-75',
-                                )}
+                                key={`${target.exerciseId}-${index}`}
+                                className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2.5"
                             >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="eyebrow">{d.day}</span>
-                                            {isToday && <Chip tone="accent">Today</Chip>}
-                                        </div>
-                                        <h4 className="mt-1 text-lg font-bold tracking-tight text-white">
-                                            {d.focus}
-                                        </h4>
-                                    </div>
-                                    {!isRest && isToday && (
-                                        <Link to="/tracker" className="btn-primary">
-                                            <Play className="h-3.5 w-3.5" /> Start
-                                        </Link>
-                                    )}
-                                </div>
-                                {d.exercises.length > 0 ? (
-                                    <ul className="mt-3 space-y-1.5 text-sm text-zinc-300">
-                                        {d.exercises.map((e, i) => (
-                                            <li
-                                                key={i}
-                                                className="flex items-center gap-2 text-[13px]"
-                                            >
-                                                <Dumbbell className="h-3.5 w-3.5 text-zinc-500" />
-                                                {e}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="mt-3 text-sm text-zinc-500">
-                                        Recovery · walk · mobility
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-white">
+                                        {exercise?.name ?? 'Exercise'}
                                     </p>
-                                )}
+                                    <p className="text-xs tabular-nums text-ink-500">
+                                        {scaled.targetSets} × {scaled.targetRepsMin}–{scaled.targetRepsMax} @ RPE{' '}
+                                        {scaled.targetRpe} · rest {Math.round((target.restSec || 120) / 60)}m
+                                    </p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <button type="button" onClick={() => onAdjustSets(index, -1)} className="increment-btn h-8 w-8" aria-label="Fewer sets">
+                                        <Minus className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button type="button" onClick={() => onAdjustSets(index, 1)} className="increment-btn h-8 w-8" aria-label="More sets">
+                                        <Plus className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button type="button" onClick={() => onSwap(index)} className="increment-btn h-8 w-8" aria-label="Swap exercise">
+                                        <Repeat className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button type="button" onClick={() => onRemove(index)} className="increment-btn h-8 w-8 text-red-400" aria-label="Remove exercise">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         );
                     })}
+                    <button type="button" onClick={onAdd} className="btn-secondary w-full py-2 text-xs">
+                        <Plus className="h-3.5 w-3.5" /> Add exercise
+                    </button>
                 </div>
-            </Card>
-
-            <Card className="relative overflow-hidden">
-                <div
-                    aria-hidden
-                    className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-accent/10 blur-3xl"
-                />
-                <div className="relative flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                        <div className="eyebrow mb-1 flex items-center gap-2">
-                            <TrendingUp className="h-3 w-3 text-accent" /> Guidance
-                        </div>
-                        <h3 className="text-xl font-bold tracking-tight text-white">
-                            Focus for {currentPhase.name.toLowerCase()}
-                        </h3>
-                        <p className="mt-1 max-w-xl text-sm text-zinc-400">
-                            {currentPhase.desc} Your AI coach will auto-adjust loads based on
-                            your RPE logs at the end of each week.
-                        </p>
-                    </div>
-                    <Link to="/tracker" className="btn-primary btn-lg shrink-0">
-                        <Play className="h-4 w-4" /> Go train
-                    </Link>
-                </div>
-            </Card>
-        </div>
+            )}
+        </Card>
     );
 }
 
-/* -------- Wizard -------- */
+/* ==================================================================
+   Wizard — instant deterministic generation
+   ================================================================== */
+function Wizard({ hasExisting, onDone, onCancel }) {
+    const { showToast } = useToast();
+    const settings = db.settings.get();
+    const [config, setConfig] = useState({
+        goal: settings.goal || 'hypertrophy',
+        experience: settings.experience || 'intermediate',
+        daysPerWeek: 4,
+        durationWeeks: 6,
+        equipment: 'full',
+    });
+    const preview = useMemo(() => generateProgram(config), [config]);
 
-function Wizard({ step, setStep, config, setConfig, generating, onGenerate, onCancel }) {
-    const pct = ((step - 1) / 3) * 100;
+    const create = () => {
+        hapticMedium();
+        db.programs.save(preview);
+        db.settings.update({ goal: config.goal, experience: config.experience });
+        hapticSuccess();
+        showToast('Program created — it adapts week by week.', 'success');
+        onDone();
+    };
 
     return (
-        <div className="mx-auto max-w-2xl animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
             <PageHeader
-                eyebrow={`Step ${step} of 3`}
-                title="Generate a program"
-                description="Three questions. We'll handle the periodization."
+                eyebrow="Plan"
+                title={hasExisting ? 'New training block' : 'Create your program'}
+                description="Answer four questions; the engine assembles a periodized block instantly."
                 icon={Sparkles}
                 actions={
-                    <button type="button" onClick={onCancel} className="btn-ghost">
-                        Cancel
-                    </button>
+                    onCancel && (
+                        <button type="button" onClick={onCancel} className="btn-ghost">
+                            Cancel
+                        </button>
+                    )
                 }
             />
 
-            <Card className="space-y-7">
-                <ProgressBar value={pct} />
+            <Card className="space-y-6">
+                <Field label="Goal">
+                    <Segmented
+                        value={config.goal}
+                        onChange={(goal) => setConfig((c) => ({ ...c, goal }))}
+                        options={Object.entries(GOALS).map(([value, g]) => ({ value, label: g.label }))}
+                    />
+                </Field>
+                <Field label="Experience">
+                    <Segmented
+                        value={config.experience}
+                        onChange={(experience) => setConfig((c) => ({ ...c, experience }))}
+                        options={[
+                            { value: 'beginner', label: 'Beginner' },
+                            { value: 'intermediate', label: 'Intermediate' },
+                            { value: 'advanced', label: 'Advanced' },
+                        ]}
+                    />
+                </Field>
+                <Field label="Days per week">
+                    <Segmented
+                        value={config.daysPerWeek}
+                        onChange={(daysPerWeek) => setConfig((c) => ({ ...c, daysPerWeek }))}
+                        options={[2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))}
+                    />
+                </Field>
+                <Field label="Equipment">
+                    <Segmented
+                        value={config.equipment}
+                        onChange={(equipment) => setConfig((c) => ({ ...c, equipment }))}
+                        options={[
+                            { value: 'full', label: 'Full gym' },
+                            { value: 'home-dumbbell', label: 'Dumbbells' },
+                            { value: 'minimal', label: 'Minimal' },
+                        ]}
+                    />
+                </Field>
+            </Card>
 
-                {step === 1 && (
-                    <Step
-                        title="Experience"
-                        description="Be honest — it calibrates load progression."
-                    >
-                        <div className="space-y-2.5">
-                            {[
-                                { v: 'Beginner', d: '< 1 year of consistent training' },
-                                { v: 'Intermediate', d: '1–3 years of consistent training' },
-                                { v: 'Advanced', d: '3+ years of consistent training' },
-                            ].map((x) => (
-                                <WizardOption
-                                    key={x.v}
-                                    active={config.experience === x.v}
-                                    onClick={() => setConfig({ ...config, experience: x.v })}
-                                    title={x.v}
-                                    description={x.d}
-                                />
-                            ))}
+            {/* Live preview */}
+            <Card className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="eyebrow mb-1">Preview</div>
+                        <h2 className="font-display text-lg font-bold text-white">{preview.name}</h2>
+                    </div>
+                    <Chip tone="accent">{preview.durationWeeks} weeks</Chip>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                    {preview.days.map((day) => (
+                        <div key={day.dayNumber} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+                            <p className="mb-1.5 text-sm font-bold text-white">
+                                Day {day.dayNumber} · {day.name}
+                            </p>
+                            <ul className="space-y-0.5 text-xs text-ink-400">
+                                {day.exercises.map((e, i) => (
+                                    <li key={i} className="truncate">
+                                        {db.exercises.byId(e.exerciseId)?.name} — {e.targetSets}×
+                                        {e.targetRepsMin}–{e.targetRepsMax}
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
-                        <div className="mt-6 flex justify-end">
-                            <button type="button" onClick={() => setStep(2)} className="btn-primary">
-                                Next <ChevronRight className="h-4 w-4" />
-                            </button>
-                        </div>
-                    </Step>
-                )}
-
-                {step === 2 && (
-                    <Step
-                        title="Frequency"
-                        description="How many lifting sessions per week?"
-                    >
-                        <div className="grid grid-cols-4 gap-3">
-                            {[3, 4, 5, 6].map((d) => {
-                                const active = config.days === d;
-                                return (
-                                    <button
-                                        type="button"
-                                        key={d}
-                                        onClick={() => setConfig({ ...config, days: d })}
-                                        className={clsx(
-                                            'relative flex h-20 flex-col items-center justify-center rounded-2xl border text-xl font-extrabold transition-all',
-                                            active
-                                                ? 'border-accent/40 bg-accent/10 text-accent shadow-glow-sm'
-                                                : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-white',
-                                        )}
-                                    >
-                                        {d}
-                                        <span className="mt-1 text-[10px] font-bold uppercase tracking-widest">
-                                            days
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <p className="mt-3 text-center text-sm text-zinc-500">
-                            {config.days === 3 && 'Full-body split suggested'}
-                            {config.days === 4 && 'Upper / Lower split suggested'}
-                            {config.days >= 5 && 'Push / Pull / Legs suggested'}
-                        </p>
-                        <div className="mt-6 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setStep(1)}
-                                className="btn-secondary flex-1"
-                            >
-                                <ChevronLeft className="h-4 w-4" /> Back
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setStep(3)}
-                                className="btn-primary flex-1"
-                            >
-                                Next <ChevronRight className="h-4 w-4" />
-                            </button>
-                        </div>
-                    </Step>
-                )}
-
-                {step === 3 && (
-                    <Step
-                        title="Primary goal"
-                        description="We'll pick reps, rest, and progression to match."
-                    >
-                        <div className="space-y-2.5">
-                            {[
-                                { v: 'Hypertrophy', d: 'Maximize muscle · moderate reps, short rests' },
-                                { v: 'Strength', d: 'Heavier loads · lower reps, longer rests' },
-                                { v: 'Endurance', d: 'High reps · conditioning bias' },
-                            ].map((x) => (
-                                <WizardOption
-                                    key={x.v}
-                                    active={config.focus === x.v}
-                                    onClick={() => setConfig({ ...config, focus: x.v })}
-                                    title={x.v}
-                                    description={x.d}
-                                />
-                            ))}
-                        </div>
-
-                        <div className="mt-6 rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-                            <div className="eyebrow mb-2">Summary</div>
-                            <dl className="grid grid-cols-2 gap-y-2 text-sm text-zinc-300 md:grid-cols-4">
-                                <SummaryItem label="Level" value={config.experience} />
-                                <SummaryItem label="Days/wk" value={String(config.days)} />
-                                <SummaryItem label="Focus" value={config.focus} />
-                                <SummaryItem label="Duration" value="6 weeks" />
-                            </dl>
-                        </div>
-
-                        <div className="mt-6 flex gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setStep(2)}
-                                className="btn-secondary flex-1"
-                                disabled={generating}
-                            >
-                                <ChevronLeft className="h-4 w-4" /> Back
-                            </button>
-                            <button
-                                type="button"
-                                onClick={onGenerate}
-                                disabled={generating}
-                                className="btn-primary flex-1"
-                            >
-                                {generating ? (
-                                    <>
-                                        <LoadingRing size={14} /> Generating…
-                                    </>
-                                ) : (
-                                    <>
-                                        <Sparkles className="h-4 w-4" /> Generate program
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </Step>
+                    ))}
+                </div>
+                <p className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 text-xs leading-relaxed text-ink-400">
+                    {preview.rationale}
+                </p>
+                <button type="button" onClick={create} className="btn-primary btn-lg w-full">
+                    <Sparkles className="h-5 w-5" />
+                    {hasExisting ? 'Replace active program' : 'Start this program'}
+                </button>
+                {hasExisting && (
+                    <p className="text-center text-xs text-ink-500">
+                        Your workout history is never affected by switching programs.
+                    </p>
                 )}
             </Card>
         </div>
     );
 }
 
-function Step({ title, description, children }) {
-    return (
-        <div className="space-y-5">
-            <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">{title}</h2>
-                <p className="mt-1 text-sm text-zinc-400">{description}</p>
-            </div>
-            {children}
-        </div>
-    );
-}
-
-function WizardOption({ active, onClick, title, description }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={clsx(
-                'flex w-full items-start gap-3 rounded-2xl border p-4 text-left transition-all',
-                active
-                    ? 'border-accent/40 bg-accent/5'
-                    : 'border-white/10 bg-white/[0.02] hover:border-white/20',
-            )}
-            aria-pressed={active}
-        >
-            <div
-                className={clsx(
-                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
-                    active ? 'border-accent bg-accent' : 'border-white/20',
-                )}
-            >
-                {active && <Check className="h-3 w-3 text-ink-950" strokeWidth={3} />}
-            </div>
-            <div>
-                <p className={clsx('font-semibold', active ? 'text-white' : 'text-zinc-300')}>
-                    {title}
-                </p>
-                <p className="mt-0.5 text-xs text-zinc-500">{description}</p>
-            </div>
-        </button>
-    );
-}
-
-function SummaryItem({ label, value }) {
+function Field({ label, children }) {
     return (
         <div>
-            <dt className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                {label}
-            </dt>
-            <dd className="font-semibold text-white">{value}</dd>
+            <div className="eyebrow mb-2">{label}</div>
+            {children}
         </div>
     );
 }

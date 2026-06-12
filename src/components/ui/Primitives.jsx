@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import clsx from 'clsx';
+import { X } from 'lucide-react';
 
 /**
  * Liftit UI primitives — lightweight, composable building blocks used across
@@ -70,6 +71,7 @@ export function Chip({ children, tone = 'default', className, icon: Icon }) {
         success: 'chip-success',
         warning: 'chip-warning',
         danger: 'chip-danger',
+        steel: 'chip-steel',
     }[tone] || 'chip';
     return (
         <span className={clsx(toneCls, className)}>
@@ -106,8 +108,8 @@ export function StatTile({ label, value, delta, icon: Icon, accent = false, clas
             <div className="flex items-baseline gap-2">
                 <span
                     className={clsx(
-                        'text-3xl font-bold tracking-tight tabular-nums md:text-4xl',
-                        accent ? 'text-gradient-lime' : 'text-white',
+                        'font-display text-3xl font-bold tracking-tight tabular-nums md:text-4xl',
+                        accent ? 'text-gradient-ember' : 'text-white',
                     )}
                 >
                     {value}
@@ -186,6 +188,119 @@ export function LoadingRing({ size = 24, className }) {
             role="status"
             aria-label="Loading"
         />
+    );
+}
+
+/**
+ * Sheet — modal panel; bottom sheet on mobile, centered dialog on desktop.
+ * Closes on backdrop click and Escape.
+ */
+export function Sheet({ open = true, onClose, title, children, wide = false }) {
+    useEffect(() => {
+        if (!open) return undefined;
+        const onKey = (e) => {
+            if (e.key === 'Escape') onClose?.();
+        };
+        document.addEventListener('keydown', onKey);
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            document.body.style.overflow = '';
+        };
+    }, [open, onClose]);
+
+    if (!open) return null;
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-end justify-center md:items-center"
+            role="dialog"
+            aria-modal="true"
+            aria-label={typeof title === 'string' ? title : undefined}
+        >
+            <button
+                type="button"
+                aria-label="Close"
+                onClick={onClose}
+                className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+            />
+            <div
+                className={clsx(
+                    'surface-strong relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-b-none rounded-t-2xl animate-slide-up md:max-h-[80vh] md:rounded-2xl md:animate-scale-in',
+                    wide ? 'md:max-w-2xl' : 'md:max-w-lg',
+                )}
+            >
+                <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4">
+                    <h2 className="font-display text-lg font-bold text-white">{title}</h2>
+                    <button type="button" onClick={onClose} className="btn-ghost -mr-2 px-2 py-2" aria-label="Close">
+                        <X className="h-5 w-5" />
+                    </button>
+                </div>
+                <div className="overflow-y-auto p-5 pb-safe">{children}</div>
+            </div>
+        </div>
+    );
+}
+
+/** Segmented control for small exclusive choices. */
+export function Segmented({ options, value, onChange, className }) {
+    return (
+        <div className={clsx('segmented', className)} role="radiogroup">
+            {options.map((opt) => {
+                const v = typeof opt === 'string' ? opt : opt.value;
+                const label = typeof opt === 'string' ? opt : opt.label;
+                const active = v === value;
+                return (
+                    <button
+                        key={v}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => onChange(v)}
+                        className={clsx('segmented-option', active && 'active')}
+                    >
+                        {label}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/** Numeric stepper with big touch targets — the core gym input. */
+export function Stepper({ value, onInput, onBlur, onStep, step = 1, min = 0, label, inputMode = 'decimal' }) {
+    return (
+        <div className="flex items-center gap-2">
+            <button
+                type="button"
+                className="increment-btn"
+                aria-label={`Decrease ${label}`}
+                onClick={() => onStep(-step)}
+            >
+                −
+            </button>
+            <div className="min-w-0 flex-1">
+                <input
+                    type="text"
+                    inputMode={inputMode}
+                    value={value}
+                    onChange={(e) => onInput(e.target.value)}
+                    onBlur={onBlur}
+                    onFocus={(e) => e.target.select()}
+                    aria-label={label}
+                    className="set-input"
+                    placeholder="0"
+                    min={min}
+                />
+            </div>
+            <button
+                type="button"
+                className="increment-btn"
+                aria-label={`Increase ${label}`}
+                onClick={() => onStep(step)}
+            >
+                +
+            </button>
+        </div>
     );
 }
 

@@ -21,10 +21,10 @@ import {
 import { useUnit } from '../../contexts/UnitContext';
 
 const chartColors = {
-    primary: '#bef264',
-    secondary: '#22c55e',
-    tertiary: '#3b82f6',
-    accent: '#f97316',
+    primary: '#ff6b3a',
+    secondary: '#4ade80',
+    tertiary: '#8fb0cf',
+    accent: '#ffa03d',
     muted: '#52525b'
 };
 
