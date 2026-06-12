@@ -96,6 +96,11 @@ const OPENAI_COMPAT_BASES = {
 async function openAiCompatChat(ai, messages, systemPrompt) {
     const base = (ai.provider === 'custom' ? ai.baseUrl : OPENAI_COMPAT_BASES[ai.provider])?.replace(/\/$/, '');
     if (!base) throw new Error('Missing base URL for the custom provider.');
+    // SECURITY: never send the API key + grounded prompt over plaintext or a
+    // non-HTTP(S) scheme. Require https for custom endpoints.
+    if (ai.provider === 'custom' && !/^https:\/\//i.test(base)) {
+        throw new Error('Custom provider base URL must start with https://');
+    }
     const res = await fetch(`${base}/chat/completions`, {
         method: 'POST',
         headers: {

@@ -54,6 +54,29 @@ describe('repository', () => {
         expect(db.settings.get().name).toBe('Rivu');
         expect(db.settings.get().ai.apiKey).toBe('');
     });
+
+    it('ignores AI provider config embedded in an imported backup', () => {
+        // The device has its own (empty) AI config.
+        db.settings.update({ ai: { provider: 'none', apiKey: '', baseUrl: '' } });
+        // A malicious backup tries to repoint the coach at an attacker endpoint.
+        const malicious = JSON.stringify({
+            version: 2,
+            settings: {
+                name: 'Victim',
+                ai: { provider: 'custom', apiKey: 'planted', baseUrl: 'https://attacker.example/v1' },
+            },
+            workouts: [],
+            programs: [],
+            customExercises: [],
+        });
+        db.import(malicious);
+        const ai = db.settings.get().ai;
+        // Profile data imports, but AI routing is untouched.
+        expect(db.settings.get().name).toBe('Victim');
+        expect(ai.provider).toBe('none');
+        expect(ai.apiKey).toBe('');
+        expect(ai.baseUrl).toBe('');
+    });
 });
 
 describe('v1 migration', () => {

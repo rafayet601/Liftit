@@ -383,7 +383,18 @@ export const db = {
         if (parsed.version !== SCHEMA_VERSION) {
             throw new Error(`Unsupported backup version: ${parsed.version}`);
         }
-        commit(() => createDocument(parsed));
+        // SECURITY: never let a backup file dictate AI provider config. A
+        // malicious backup could otherwise point `provider: custom` at an
+        // attacker-controlled `baseUrl` and silently exfiltrate the user's
+        // data — and any API key they later paste — to that endpoint. Keep
+        // the device's existing AI settings; only workouts/programs/profile
+        // come from the file.
+        const currentAi = load().settings.ai;
+        commit(() => {
+            const doc = createDocument(parsed);
+            doc.settings = createSettings({ ...doc.settings, ai: currentAi });
+            return doc;
+        });
     },
 
     wipe() {
