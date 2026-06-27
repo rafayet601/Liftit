@@ -19,6 +19,7 @@ import { useSettings, useSyncStatus } from '../data/DataProvider';
 import { useAuth } from '../contexts/AuthContext';
 import { AI_PROVIDERS } from '../ai/providers';
 import { Card, Chip, PageHeader, Segmented, Sheet } from '../components/ui/Primitives';
+import Glass from '../components/ui/Glass';
 import { useToast } from '../components/ui/Toast';
 
 export default function SettingsPage() {
@@ -145,7 +146,7 @@ export default function SettingsPage() {
             </Card>
 
             {/* Data */}
-            <Card className="space-y-4">
+            <Card className="space-y-4 glass-card-glow-danger">
                 <SectionHead icon={Database} title="Your data" />
                 <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={exportData} className="btn-secondary">
@@ -213,7 +214,8 @@ function AiProviderCard({ settings }) {
     const provider = AI_PROVIDERS[ai.provider] ?? AI_PROVIDERS.none;
 
     return (
-        <Card className="space-y-4">
+        <Glass tint="neutral" glow style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
+        <Card className="space-y-4 glass-card-glow-steel border-steel/30">
             <SectionHead icon={Bot} title="AI Coach" />
             <p className="text-sm text-ink-400">
                 Bring your own model: pick a provider and paste your API key. The key is stored only
@@ -280,6 +282,7 @@ function AiProviderCard({ settings }) {
                 </div>
             )}
         </Card>
+        </Glass>
     );
 }
 

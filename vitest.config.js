@@ -9,5 +9,10 @@ export default defineConfig({
         setupFiles: ['./src/test/setup.js'],
         css: false,
         include: ['src/**/*.{test,spec}.{js,jsx}'],
+        pool: 'threads',
+        threads: {
+            singleThread: true,
+        },
+        isolate: false,
     },
 });

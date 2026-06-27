@@ -24,6 +24,7 @@ import {
     matchExerciseByName,
     searchLibrary,
 } from './exercises';
+import { getItem, setItem, removeItem, __resetForTest as resetStorage } from './storage';
 
 const STORAGE_KEY = 'liftit_data_v2';
 const LEGACY_KEY = 'liftit_data_v1';
@@ -39,7 +40,7 @@ const listeners = new Set();
 function load() {
     if (doc) return doc;
     try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = getItem(STORAGE_KEY);
         if (raw) {
             doc = createDocument(JSON.parse(raw));
             return doc;
@@ -54,7 +55,7 @@ function load() {
 
 function persist() {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+        setItem(STORAGE_KEY, JSON.stringify(doc));
     } catch (e) {
         console.error('[db] failed to persist', e);
     }
@@ -81,7 +82,7 @@ function subscribe(fn) {
 function migrateFromV1() {
     let legacy = null;
     try {
-        const raw = localStorage.getItem(LEGACY_KEY);
+        const raw = getItem(LEGACY_KEY);
         if (raw) legacy = JSON.parse(raw);
     } catch {
         return null;
@@ -161,7 +162,7 @@ function migrateFromV1() {
 
     let units = 'kg';
     try {
-        units = localStorage.getItem(LEGACY_UNIT_KEY) === 'lbs' ? 'lbs' : 'kg';
+        units = getItem(LEGACY_UNIT_KEY) === 'lbs' ? 'lbs' : 'kg';
     } catch {
         /* default */
     }
@@ -220,6 +221,7 @@ export const db = {
     /** Test-only: drop the in-memory cache so the next read re-loads/migrates. */
     __resetForTest() {
         doc = null;
+        resetStorage();
     },
 
     workouts: {
@@ -400,7 +402,7 @@ export const db = {
     wipe() {
         commit(() => createDocument());
         try {
-            localStorage.removeItem(LEGACY_KEY);
+            removeItem(LEGACY_KEY);
         } catch {
             /* ignore */
         }

@@ -33,6 +33,9 @@ import ExercisePicker from '../components/workout/ExercisePicker';
 import RestTimer from '../components/workout/RestTimer';
 import SetRow from '../components/workout/SetRow';
 import { Card, Chip, EmptyState, PageHeader, ProgressBar, Sheet } from '../components/ui/Primitives';
+import Glass from '../components/ui/Glass';
+import LinearGradient from '../components/ui/LinearGradient';
+import WaveDistortion from '../components/ui/WaveDistortion';
 import { useToast } from '../components/ui/Toast';
 import { hapticMedium, hapticSuccess } from '../lib/platform';
 
@@ -95,21 +98,24 @@ function SessionLauncher() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <PageHeader
-                eyebrow="Train"
-                title="Workout"
-                description={
-                    program
-                        ? `${program.name} · Week ${week} of ${program.durationWeeks} · ${phase.name}`
-                        : 'No active program — start freestyle or generate one.'
-                }
-                icon={Dumbbell}
-                actions={
-                    <button type="button" onClick={beginBlank} className="btn-outline">
-                        <Plus className="h-4 w-4" /> Empty workout
-                    </button>
-                }
-            />
+            <Glass tint="neutral" glow wave wavePreset="purple" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
+                <PageHeader
+                    eyebrow="Train"
+                    title="Workout"
+                    description={
+                        program
+                            ? `${program.name} · Week ${week} of ${program.durationWeeks} · ${phase.name}`
+                            : 'No active program — start freestyle or generate one.'
+                    }
+                    icon={Dumbbell}
+                    actions={
+                        <button type="button" onClick={beginBlank} className="btn-outline">
+                            <Plus className="h-4 w-4" /> Empty workout
+                        </button>
+                    }
+                />
+                <LinearGradient preset="purple" variant="strip" glow style={{ height: '2px', borderRadius: '999px', marginTop: '12px', opacity: 0.6 }} />
+            </Glass>
 
             {!program ? (
                 <EmptyState
@@ -144,8 +150,8 @@ function SessionLauncher() {
                                 key={day.dayNumber}
                                 padded={false}
                                 className={clsx(
-                                    'flex items-center justify-between gap-4 p-4',
-                                    recommended && 'border-accent/40',
+                                    'flex items-center justify-between gap-4 p-4 transition-all duration-200',
+                                    recommended ? 'glass-card-glow' : 'surface-hover hover:scale-[1.01]',
                                 )}
                             >
                                 <div className="min-w-0">
@@ -355,7 +361,7 @@ function ActiveSession() {
     return (
         <div className="space-y-5 animate-fade-in">
             {/* Header */}
-            <div className="surface-strong flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="sticky top-0 z-50 -mx-4 px-4 py-3 bg-ink-950/65 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.4)] flex flex-wrap items-center justify-between gap-3 md:mx-0 md:rounded-2xl md:border md:bg-ink-900/60">
                 <div className="min-w-0">
                     <div className="eyebrow mb-0.5 flex items-center gap-2">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
@@ -373,9 +379,10 @@ function ActiveSession() {
                         type="button"
                         onClick={finish}
                         disabled={completedSets === 0}
-                        className="btn-primary"
+                        className="btn-cta"
+                        style={{ minWidth: '120px' }}
                     >
-                        <CheckCircle2 className="h-4 w-4" /> Finish
+                        <CheckCircle2 className="h-5 w-5" /> Finish Workout
                     </button>
                 </div>
             </div>
@@ -503,8 +510,9 @@ function ExerciseCard({
     return (
         <div
             className={clsx(
-                'surface overflow-hidden',
-                isDone && 'border-emerald-500/25',
+                'surface overflow-hidden transition-all duration-200 mesh-border',
+                open && !isDone && 'glass-card-glow',
+                isDone && 'glass-card-glow-success',
             )}
         >
             <button
@@ -615,9 +623,10 @@ function SummarySheet({ summary, unit, displayWeight, onClose }) {
                                 return (
                                     <li
                                         key={i}
-                                        className="flex items-center gap-2.5 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2.5 text-sm"
+                                        className="glass-card-glow-gold flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm animate-fade-in"
+                                        style={{ animationDelay: `${i * 80}ms` }}
                                     >
-                                        <Trophy className="h-4 w-4 shrink-0 text-amber-300" />
+                                        <Trophy className="h-4 w-4 shrink-0 text-amber-300 text-glow-gold" />
                                         <span className="text-white">
                                             <strong>{exercise?.name}</strong>{' '}
                                             {pr.type === 'weight' &&
@@ -639,7 +648,7 @@ function SummarySheet({ summary, unit, displayWeight, onClose }) {
                     {' — '}syncs automatically when you're signed in.
                 </p>
 
-                <button type="button" onClick={onClose} className="btn-primary w-full">
+                <button type="button" onClick={onClose} className="btn-cta">
                     View in history
                 </button>
             </div>
@@ -649,13 +658,17 @@ function SummarySheet({ summary, unit, displayWeight, onClose }) {
 
 function SummaryStat({ icon: Icon, label, value, sub }) {
     return (
-        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3">
-            <Icon className="mx-auto mb-1 h-4 w-4 text-accent" />
-            <div className="font-display text-xl font-bold tabular-nums text-white">
-                {value}
-                {sub && <span className="ml-0.5 text-xs font-semibold text-ink-500">{sub}</span>}
+        <div className="stats-card">
+            <div className="stats-card-inner text-center">
+                <span className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15">
+                    <Icon className="h-4 w-4 text-accent" />
+                </span>
+                <div className="font-display text-2xl font-bold tabular-nums text-white count-up">
+                    {value}
+                    {sub && <span className="ml-0.5 text-xs font-semibold text-ink-500">{sub}</span>}
+                </div>
+                <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-ink-500">{label}</div>
             </div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-ink-500">{label}</div>
         </div>
     );
 }
