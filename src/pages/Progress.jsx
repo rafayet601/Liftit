@@ -9,7 +9,7 @@ import {
     Tooltip,
     ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, Trophy, Dumbbell, Flame } from 'lucide-react';
+import { TrendingUp, Trophy, Dumbbell, Flame, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { db } from '../data/db';
 import { useWorkouts } from '../data/DataProvider';
@@ -21,16 +21,78 @@ import {
     frequencyHeatmap,
     recentExerciseIds,
 } from '../engine/analytics';
+import {
+    sessionsForExercise,
+    analyzeDoubleProgression,
+    getDeloadRecommendation,
+    getProgressionRecommendation
+} from '../engine/progression';
 import { MUSCLE_GROUPS } from '../data/exercises';
 import { Card, Chip, EmptyState, PageHeader } from '../components/ui/Primitives';
+import Glass from '../components/ui/Glass';
 
 /**
  * Progress — e1RM trend for any logged exercise, muscle-group balance,
  * PR timeline, and a frequency heatmap. 100% derived from real logs.
+ * 
+ * ENHANCED: Now includes double-progression analysis with deload recommendations.
  */
+
+function ProgressionBadge({ trend, priority }) {
+    const bgMap = {
+        success: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+        warning: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
+        info: 'bg-blue-500/10 border-blue-500/20 text-blue-400',
+    };
+    
+    const iconMap = {
+        success: CheckCircle2,
+        warning: AlertCircle,
+        info: Zap,
+    };
+    
+    const Icon = iconMap[priority] || Zap;
+    const className = bgMap[priority] || bgMap.info;
+    
+    return (
+        <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${className}`}>
+            <Icon className="h-3.5 w-3.5" />
+            <span className="capitalize">{trend}</span>
+        </div>
+    );
+}
+
+function ProgressionRecommendationCard({ recommendation, exerciseName }) {
+    if (!recommendation) return null;
+    
+    const bgMap = {
+        success: 'border-emerald-500/20 bg-emerald-500/5',
+        warning: 'border-amber-500/20 bg-amber-500/5',
+        info: 'border-blue-500/20 bg-blue-500/5',
+    };
+    
+    return (
+        <Card className={`space-y-3 border ${bgMap[recommendation.priority]}`}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-white">{recommendation.title}</h3>
+                        <ProgressionBadge trend={recommendation.action} priority={recommendation.priority} />
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-400">{recommendation.description}</p>
+                    {recommendation.details && (
+                        <p className="mt-2 text-xs text-zinc-500">{recommendation.details}</p>
+                    )}
+                </div>
+            </div>
+        </Card>
+    );
+}
+
 export default function Progress() {
     const workouts = useWorkouts();
     const { unit, displayWeight } = useUnit();
+    const [timeframe, setTimeframe] = useState('30days');
 
     const trackedExercises = useMemo(
         () =>
@@ -42,10 +104,12 @@ export default function Progress() {
     const [selectedId, setSelectedId] = useState(null);
     const activeId = selectedId ?? trackedExercises[0]?.id ?? null;
 
+    const trendLimit = timeframe === '30days' ? 30 : timeframe === '12weeks' ? 84 : 365;
+
     const trend = useMemo(
         () =>
             activeId
-                ? e1rmTrend(workouts, activeId, 30).map((p) => ({
+                ? e1rmTrend(workouts, activeId, trendLimit).map((p) => ({
                       ...p,
                       e1rmDisplay: displayWeight(p.e1rm),
                       label: new Date(p.date).toLocaleDateString(undefined, {
@@ -54,8 +118,21 @@ export default function Progress() {
                       }),
                   }))
                 : [],
-        [workouts, activeId, displayWeight],
+        [workouts, activeId, displayWeight, trendLimit],
     );
+
+    const progressionData = useMemo(() => {
+        if (!activeId) return { analysis: null, recommendation: null, deloadRec: null };
+        
+        const sessions = sessionsForExercise(workouts, activeId, 12);
+        if (!sessions.length) return { analysis: null, recommendation: null, deloadRec: null };
+        
+        const analysis = analyzeDoubleProgression(sessions);
+        const recommendation = getProgressionRecommendation(sessions, analysis, unit);
+        const deloadRec = getDeloadRecommendation(analysis);
+        
+        return { analysis, recommendation, deloadRec };
+    }, [workouts, activeId, unit]);
 
     const muscles = useMemo(
         () => muscleGroupSets(workouts, (id) => db.exercises.byId(id), 28),
@@ -89,14 +166,51 @@ export default function Progress() {
                 icon={TrendingUp}
             />
 
-            {/* e1RM trend */}
-            <Card className="space-y-4">
+            {activeId && progressionData.recommendation && (
+                <ProgressionRecommendationCard 
+                    recommendation={progressionData.recommendation}
+                    exerciseName={trackedExercises.find(e => e.id === activeId)?.name}
+                />
+            )}
+
+            <Glass tint="neutral" glow wave wavePreset="purple" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
+            <Card className="space-y-4 glass-card-glow border-accent/20 mesh-border">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-display text-lg font-bold text-white">
                         Estimated 1RM
                     </h2>
-                    <Chip>Epley + Brzycki blend</Chip>
+                    <div className="flex gap-1.5">
+                        <Chip>Epley + Brzycki blend</Chip>
+                        {progressionData.analysis && (
+                            <ProgressionBadge 
+                                trend={progressionData.analysis.trend} 
+                                priority={progressionData.recommendation?.priority}
+                            />
+                        )}
+                    </div>
                 </div>
+                
+                <div className="flex gap-2 border-b border-white/10 pb-3">
+                    {[
+                        { key: '30days', label: '30 days' },
+                        { key: '12weeks', label: '12 weeks' },
+                        { key: 'alltime', label: 'All time' }
+                    ].map(({ key, label }) => (
+                        <button
+                            key={key}
+                            onClick={() => setTimeframe(key)}
+                            className={clsx(
+                                'text-xs font-semibold px-2 py-1 rounded transition-colors',
+                                timeframe === key
+                                    ? 'text-accent border-b-2 border-accent'
+                                    : 'text-zinc-400 hover:text-zinc-300'
+                            )}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
                     {trackedExercises.slice(0, 12).map((e) => (
                         <button
@@ -106,8 +220,8 @@ export default function Progress() {
                             className={clsx(
                                 'shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors',
                                 e.id === activeId
-                                    ? 'border-accent/50 bg-accent/15 text-accent'
-                                    : 'border-white/10 bg-white/[0.03] text-ink-400 hover:text-white',
+                                    ? 'border-accent/40 bg-accent/20 text-accent shadow-glass-glow-purple'
+                                    : 'border-white/[0.06] bg-white/[0.01] text-ink-400 hover:border-white/20 hover:bg-white/[0.04]',
                             )}
                         >
                             {e.name}
@@ -119,53 +233,80 @@ export default function Progress() {
                         Log this lift in at least two sessions to draw a trend line.
                     </p>
                 ) : (
-                    <div className="h-56">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                                <defs>
-                                    <linearGradient id="emberFill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#ff6b3a" stopOpacity={0.3} />
-                                        <stop offset="100%" stopColor="#ff6b3a" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid stroke="rgba(255,255,255,0.05)" vertical={false} />
-                                <XAxis
-                                    dataKey="label"
-                                    tick={{ fill: '#7c7a75', fontSize: 11 }}
-                                    axisLine={false}
-                                    tickLine={false}
-                                />
-                                <YAxis
-                                    tick={{ fill: '#7c7a75', fontSize: 11 }}
-                                    axisLine={false}
-                                    tickLine={false}
-                                    domain={['auto', 'auto']}
-                                />
-                                <Tooltip
-                                    contentStyle={{
-                                        background: '#1b1b1f',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: 12,
-                                        color: '#f7f6f4',
-                                    }}
-                                    formatter={(v) => [`${v} ${unit}`, 'e1RM']}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="e1rmDisplay"
-                                    stroke="#ff6b3a"
-                                    strokeWidth={2.5}
-                                    fill="url(#emberFill)"
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
+                    <>
+                        <div className="h-56">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+                                    <defs>
+                                        <linearGradient id="purpleFill" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.4} />
+                                            <stop offset="55%" stopColor="#8b5cf6" stopOpacity={0.08} />
+                                            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid stroke="rgba(143,176,207,0.07)" vertical={false} strokeDasharray="3 3" />
+                                    <XAxis
+                                        dataKey="label"
+                                        tick={{ fill: '#55534f', fontSize: 11 }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+                                    <YAxis
+                                        tick={{ fill: '#55534f', fontSize: 11 }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        domain={['auto', 'auto']}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: 'rgba(11, 11, 12, 0.88)',
+                                            border: '1px solid rgba(139,92,246,0.2)',
+                                            borderRadius: 12,
+                                            color: '#f7f6f4',
+                                            backdropFilter: 'blur(16px)',
+                                            WebkitBackdropFilter: 'blur(16px)',
+                                            boxShadow: '0 8px 32px 0 rgba(0,0,0,0.55), 0 0 20px -8px rgba(139,92,246,0.15)',
+                                            fontFamily: 'Space Grotesk',
+                                        }}
+                                        formatter={(v) => [`${v} ${unit}`, 'e1RM']}
+                                        cursor={{ stroke: 'rgba(139,92,246,0.3)', strokeWidth: 1 }}
+                                    />
+                                    <Area
+                                        type="monotoneX"
+                                        dataKey="e1rmDisplay"
+                                        stroke="#8b5cf6"
+                                        strokeWidth={3}
+                                        fill="url(#purpleFill)"
+                                        dot={{ fill: '#8b5cf6', strokeWidth: 0, r: 3 }}
+                                        activeDot={{ r: 5, fill: '#8b5cf6', strokeWidth: 2, stroke: 'rgba(139,92,246,0.3)' }}
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                        
+                        {progressionData.analysis && (
+                            <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                                <div className="rounded-lg bg-white/[0.02] p-2.5">
+                                    <p className="text-xs text-zinc-500">Volume change</p>
+                                    <p className="mt-0.5 text-sm font-semibold text-white">
+                                        {progressionData.analysis.volumeProgressionPercent.toFixed(1)}%
+                                    </p>
+                                </div>
+                                <div className="rounded-lg bg-white/[0.02] p-2.5">
+                                    <p className="text-xs text-zinc-500">Intensity change</p>
+                                    <p className="mt-0.5 text-sm font-semibold text-white">
+                                        {progressionData.analysis.intensityProgressionPercent.toFixed(1)}%
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </>
                 )}
             </Card>
+            </Glass>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                {/* Muscle balance — weekly sets per group */}
-                <Card className="space-y-4">
+                <Card className="space-y-4 mesh-border">
                     <div className="flex items-center justify-between">
                         <h2 className="font-display text-lg font-bold text-white">Muscle balance</h2>
                         <Chip>Sets · last 4 weeks</Chip>
@@ -178,16 +319,16 @@ export default function Progress() {
                                     <span className="w-24 shrink-0 text-xs font-semibold capitalize text-ink-400">
                                         {m}
                                     </span>
-                                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+                                    <div className="h-2.5 flex-1 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.04)' }}>
                                         <div
-                                            className={clsx(
-                                                'h-full rounded-full',
-                                                sets > 0 ? 'bg-gradient-ember' : '',
-                                            )}
-                                            style={{ width: `${(sets / maxMuscle) * 100}%` }}
+                                            className="h-full rounded-full transition-all duration-300"
+                                            style={{
+                                                width: `${(sets / maxMuscle) * 100}%`,
+                                                background: 'linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%)',
+                                            }}
                                         />
                                     </div>
-                                    <span className="w-8 shrink-0 text-right text-xs tabular-nums text-ink-500">
+                                    <span className="w-12 shrink-0 text-right text-xs font-semibold text-zinc-500">
                                         {Math.round(sets)}
                                     </span>
                                 </li>
@@ -196,93 +337,59 @@ export default function Progress() {
                     </ul>
                 </Card>
 
-                {/* PR timeline */}
-                <Card className="space-y-4">
+                <Card className="space-y-4 mesh-border">
                     <div className="flex items-center justify-between">
-                        <h2 className="flex items-center gap-2 font-display text-lg font-bold text-white">
-                            <Trophy className="h-5 w-5 text-amber-300" /> PR timeline
-                        </h2>
+                        <h2 className="font-display text-lg font-bold text-white">Recent PRs</h2>
+                        <Chip>Last 12 sessions</Chip>
                     </div>
-                    {prs.length === 0 ? (
-                        <p className="text-sm text-ink-500">
-                            Beat any previous best and it lands here automatically.
-                        </p>
-                    ) : (
-                        <ul className="space-y-2">
-                            {prs.map((event) => {
-                                const exercise = db.exercises.byId(event.exerciseId);
-                                return (
-                                    <li
-                                        key={`${event.workoutId}-${event.exerciseId}`}
-                                        className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2"
-                                    >
-                                        <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-white">
-                                                {exercise?.name}
-                                            </p>
-                                            <p className="text-xs text-ink-500">
-                                                {event.prs
-                                                    .map((pr) =>
-                                                        pr.type === 'weight'
-                                                            ? `${displayWeight(pr.value)} ${unit} top set`
-                                                            : pr.type === 'e1rm'
-                                                              ? `e1RM ${displayWeight(pr.value)} ${unit}`
-                                                              : `${pr.value} reps @ ${displayWeight(pr.weight)} ${unit}`,
-                                                    )
-                                                    .join(' · ')}
-                                            </p>
-                                        </div>
-                                        <span className="shrink-0 text-xs text-ink-500">
-                                            {new Date(event.date).toLocaleDateString(undefined, {
-                                                month: 'short',
-                                                day: 'numeric',
-                                            })}
-                                        </span>
-                                    </li>
-                                );
-                            })}
+                    {prs.length ? (
+                        <ul className="space-y-2.5">
+                            {prs.map((pr, i) => (
+                                <li key={i} className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.01] p-2.5">
+                                    <div className="flex-1 text-sm">
+                                        <p className="font-semibold text-white">{db.exercises.byId(pr.exerciseId)?.name ?? 'Unknown'}</p>
+                                        <p className="text-xs text-zinc-500">
+                                            {new Date(pr.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <Trophy className="h-4 w-4 text-amber-400" />
+                                </li>
+                            ))}
                         </ul>
+                    ) : (
+                        <p className="rounded-xl border border-dashed border-white/10 p-4 text-center text-sm text-ink-500">
+                            No PRs yet. Keep training!
+                        </p>
                     )}
                 </Card>
             </div>
 
-            {/* Frequency heatmap */}
-            <Card className="space-y-3">
+            <Card className="space-y-4 mesh-border">
                 <div className="flex items-center justify-between">
-                    <h2 className="flex items-center gap-2 font-display text-lg font-bold text-white">
-                        <Flame className="h-5 w-5 text-accent" /> Consistency
-                    </h2>
+                    <h2 className="font-display text-lg font-bold text-white">Consistency</h2>
                     <Chip>Last 12 weeks</Chip>
                 </div>
-                <Heatmap data={heatmap} weeks={12} />
+                <div className="no-scrollbar -mx-2 grid max-h-32 grid-cols-14 gap-1 overflow-x-auto px-2">
+                    {Array.from({ length: 84 }, (_, i) => {
+                        const d = new Date();
+                        d.setDate(d.getDate() - (83 - i));
+                        const key = d.toISOString().slice(0, 10);
+                        const count = heatmap[key] ?? 0;
+                        const opacity = count === 0 ? 0.15 : count === 1 ? 0.4 : count === 2 ? 0.65 : 1;
+                        return (
+                            <div
+                                key={key}
+                                className="aspect-square rounded-sm"
+                                style={{
+                                    background: 'rgba(139,92,246,' + opacity + ')',
+                                    borderRadius: '3px',
+                                }}
+                                title={`${key}: ${count} workout${count !== 1 ? 's' : ''}`}
+                            />
+                        );
+                    })}
+                </div>
             </Card>
-        </div>
-    );
-}
-
-function Heatmap({ data, weeks }) {
-    const days = weeks * 7;
-    const today = new Date();
-    const cells = [];
-    for (let i = days - 1; i >= 0; i--) {
-        const d = new Date(today.getTime() - i * 24 * 3600 * 1000);
-        const key = d.toISOString().slice(0, 10);
-        cells.push({ key, count: data[key] ?? 0 });
-    }
-    return (
-        <div className="grid grid-flow-col grid-rows-7 gap-1 overflow-x-auto pb-1">
-            {cells.map((c) => (
-                <div
-                    key={c.key}
-                    title={`${c.key}: ${c.count} workout${c.count === 1 ? '' : 's'}`}
-                    className={clsx(
-                        'h-3.5 w-3.5 rounded-[4px]',
-                        c.count === 0 && 'bg-white/[0.04]',
-                        c.count === 1 && 'bg-accent/45',
-                        c.count >= 2 && 'bg-accent',
-                    )}
-                />
-            ))}
         </div>
     );
 }

@@ -8,13 +8,14 @@
  */
 
 import { get, post, put, del, isAuthenticated } from '../lib/api';
+import { getItem, setItem } from './storage';
 import { db } from './db';
 
 const ID_MAP_KEY = 'liftit_sync_idmap_v1';
 
 function loadIdMap() {
     try {
-        return JSON.parse(localStorage.getItem(ID_MAP_KEY)) || {};
+        return JSON.parse(getItem(ID_MAP_KEY)) || {};
     } catch {
         return {};
     }
@@ -22,7 +23,7 @@ function loadIdMap() {
 
 function saveIdMap(map) {
     try {
-        localStorage.setItem(ID_MAP_KEY, JSON.stringify(map));
+        setItem(ID_MAP_KEY, JSON.stringify(map));
     } catch {
         /* non-fatal */
     }

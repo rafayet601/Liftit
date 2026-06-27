@@ -3,8 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Dumbbell, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
 import { db } from '../data/db';
 import { generateProgram, GOALS } from '../engine/generator';
-import { Segmented } from '../components/ui/Primitives';
+import { Segmented, Card } from '../components/ui/Primitives';
 import { hapticSuccess } from '../lib/platform';
+import WaveDistortion from '../components/ui/WaveDistortion';
+import LinearGradient from '../components/ui/LinearGradient';
+import Glass from '../components/ui/Glass';
 
 /**
  * First-run flow: four quick questions → optional instant program.
@@ -48,12 +51,27 @@ export default function Onboarding() {
     const back = () => setStep((s) => Math.max(s - 1, 0));
 
     return (
-        <div className="safe-top safe-bottom flex min-h-dvh flex-col bg-ink-950 px-5 py-8">
-            <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
+        <div className="safe-top safe-bottom relative flex min-h-dvh flex-col bg-transparent px-5 py-8 overflow-hidden">
+            <WaveDistortion
+                preset="aurora"
+                amplitude={0.06}
+                frequency={2.0}
+                speed={0.3}
+                opacity={0.4}
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    zIndex: 0,
+                }}
+            />
+
+            <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
                 {/* Brand + progress */}
                 <div className="mb-10 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-ember text-ink-950">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-purple text-ink-950">
                             <Dumbbell className="h-4.5 w-4.5 h-5 w-5" strokeWidth={2.4} />
                         </span>
                         <span className="font-display text-lg font-bold text-white">
@@ -64,7 +82,8 @@ export default function Onboarding() {
                         {STEPS.map((s, i) => (
                             <span
                                 key={s}
-                                className={`h-1.5 w-6 rounded-full ${i <= step ? 'bg-accent' : 'bg-white/10'}`}
+                                className={`h-1.5 w-6 rounded-full transition-all duration-300 ${i <= step ? 'bg-accent' : 'bg-white/10'}`}
+                                style={i <= step ? { boxShadow: '0 0 8px rgba(139,92,246,0.5)' } : undefined}
                             />
                         ))}
                     </div>
@@ -178,18 +197,41 @@ export default function Onboarding() {
                     )}
                 </div>
             </div>
+
+            <LinearGradient
+                preset="purpleToSteel"
+                animated
+                variant="strip"
+                style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: '2px',
+                    borderRadius: 0,
+                    opacity: 0.6,
+                }}
+            />
         </div>
     );
 }
 
 function StepShell({ title, subtitle, children }) {
     return (
-        <div>
+        <Glass
+            tint="purple"
+            glow
+            wave
+            wavePreset="purple"
+            gradientBorder
+            gradientPreset="purpleToSteel"
+            className="w-full max-w-md mx-auto my-auto animate-scale-in"
+        >
             <h1 className="font-display text-3xl font-bold leading-tight tracking-tight text-white">
                 {title}
             </h1>
             <p className="mb-7 mt-2 text-[15px] text-ink-400">{subtitle}</p>
             {children}
-        </div>
+        </Glass>
     );
 }

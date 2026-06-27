@@ -1,0 +1,119 @@
+diff --git a/tailwind.config.js b/tailwind.config.js
+--- a/tailwind.config.js
++++ b/tailwind.config.js
+@@ -71,6 +71,11 @@
+             boxShadow: {
+                 glow: '0 0 32px -10px rgba(255,107,58,0.4)',
+                 'glow-sm': '0 0 14px -4px rgba(255,107,58,0.45)',
+                 card: '0 1px 0 rgba(255,255,255,0.03) inset, 0 12px 28px -18px rgba(0,0,0,0.55)',
+                 'card-lg': '0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 60px -28px rgba(0,0,0,0.65)',
++                'glass-glow-ember': '0 1px 0 rgba(255,255,255,0.08) inset, 0 0 0 1px rgba(255,107,58,0.1) inset, 0 8px 32px 0 rgba(0,0,0,0.45), 0 0 20px -5px rgba(255,107,58,0.15)',
++                'glass-glow-steel': '0 1px 0 rgba(255,255,255,0.08) inset, 0 0 0 1px rgba(143,176,207,0.1) inset, 0 8px 32px 0 rgba(0,0,0,0.45), 0 0 20px -5px rgba(143,176,207,0.15)',
++                'glass-glow-success': '0 1px 0 rgba(255,255,255,0.08) inset, 0 0 0 1px rgba(74,222,128,0.1) inset, 0 8px 32px 0 rgba(0,0,0,0.45), 0 0 20px -5px rgba(74,222,128,0.15)',
++                'glass-glow-danger': '0 1px 0 rgba(255,255,255,0.08) inset, 0 0 0 1px rgba(248,113,113,0.1) inset, 0 8px 32px 0 rgba(0,0,0,0.45), 0 0 20px -5px rgba(248,113,113,0.15)',
+             },
+             backgroundImage: {
+                 'gradient-ember': 'linear-gradient(135deg, #ff6b3a 0%, #ffa03d 100%)',
+diff --git a/src/index.css b/src/index.css
+--- a/src/index.css
++++ b/src/index.css
+@@ -17,6 +17,11 @@
+ @layer base {
+     :root {
+         color-scheme: dark;
+ 
+         /* Surfaces */
+         --bg: #0b0b0c;
++        --glass-bg: rgba(19, 19, 22, 0.45);
++        --glass-bg-hover: rgba(27, 27, 31, 0.65);
++        --glass-border: rgba(255, 255, 255, 0.08);
++        --glass-border-hover: rgba(255, 255, 255, 0.14);
+         --surface: #131316;
+@@ -88,6 +93,18 @@
+         background:
+             radial-gradient(
+-                1000px 520px at 85% -12%,
+-                rgba(255, 107, 58, 0.06),
+-                transparent 60%
++                1200px 600px at 90% 5%,
++                rgba(255, 107, 58, 0.09),
++                transparent 65%
++            ),
++            radial-gradient(
++                1000px 500px at 10% 85%,
++                rgba(143, 176, 207, 0.08),
++                transparent 60%
++            ),
++            radial-gradient(
++                800px 400px at 50% 45%,
++                rgba(255, 107, 58, 0.02),
++                transparent 50%
+             ),
+             var(--bg);
++        background-attachment: fixed;
+         color: var(--text-primary);
+@@ -190,11 +207,11 @@
+     .surface {
+-        @apply relative rounded-2xl border border-white/[0.07] bg-ink-900;
+-        box-shadow: var(--shadow-card);
++        @apply relative rounded-2xl border border-white/[0.08] bg-ink-950/45 backdrop-blur-xl;
++        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 28px -18px rgba(0, 0, 0, 0.55);
+     }
+     .surface-strong {
+-        @apply relative rounded-2xl border border-white/[0.12] bg-ink-800;
+-        box-shadow: var(--shadow-card);
++        @apply relative rounded-2xl border border-white/[0.12] bg-ink-900/60 backdrop-blur-2xl;
++        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 24px 60px -28px rgba(0, 0, 0, 0.65);
+     }
+     .surface-hover {
+-        @apply transition-[border-color,background-color] duration-200 hover:border-white/[0.14] hover:bg-ink-800;
++        @apply transition-all duration-200 ease-out hover:border-white/[0.15] hover:bg-ink-900/70;
++        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 20px 48px -24px rgba(0, 0, 0, 0.7);
++        transform: translateY(-1.5px);
+     }
++
++    /* Glass glows */
++    .glass-card-glow {
++        background: rgba(19, 19, 22, 0.55);
++        backdrop-filter: blur(16px);
++        -webkit-backdrop-filter: blur(16px);
++        border: 1px solid rgba(255, 107, 58, 0.25);
++        box-shadow: 
++            0 1px 0 rgba(255, 255, 255, 0.08) inset,
++            0 0 0 1px rgba(255, 107, 58, 0.1) inset,
++            0 12px 32px 0 rgba(0, 0, 0, 0.45),
++            0 0 20px -5px rgba(255, 107, 58, 0.15);
++    }
++    .glass-card-glow-steel {
++        background: rgba(19, 19, 22, 0.55);
++        backdrop-filter: blur(16px);
++        -webkit-backdrop-filter: blur(16px);
++        border: 1px solid rgba(143, 176, 207, 0.25);
++        box-shadow: 
++            0 1px 0 rgba(255, 255, 255, 0.08) inset,
++            0 0 0 1px rgba(143, 176, 207, 0.1) inset,
++            0 12px 32px 0 rgba(0, 0, 0, 0.45),
++            0 0 20px -5px rgba(143, 176, 207, 0.15);
++    }
++    .glass-card-glow-success {
++        background: rgba(19, 19, 22, 0.55);
++        backdrop-filter: blur(16px);
++        -webkit-backdrop-filter: blur(16px);
++        border: 1px solid rgba(74, 222, 128, 0.25);
++        box-shadow: 
++            0 1px 0 rgba(255, 255, 255, 0.08) inset,
++            0 0 0 1px rgba(74, 222, 128, 0.1) inset,
++            0 12px 32px 0 rgba(0, 0, 0, 0.45),
++            0 0 20px -5px rgba(74, 222, 128, 0.15);
++    }
++    .glass-card-glow-danger {
++        background: rgba(19, 19, 22, 0.55);
++        backdrop-filter: blur(16px);
++        -webkit-backdrop-filter: blur(16px);
++        border: 1px solid rgba(248, 113, 113, 0.25);
++        box-shadow: 
++            0 1px 0 rgba(255, 255, 255, 0.08) inset,
++            0 0 0 1px rgba(248, 113, 113, 0.1) inset,
++            0 12px 32px 0 rgba(0, 0, 0, 0.45),
++            0 0 20px -5px rgba(248, 113, 113, 0.15);
++    }

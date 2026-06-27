@@ -17,6 +17,7 @@ import React, {
 } from 'react';
 import { db } from './db';
 import { runSync } from './sync';
+import { initializeStorage } from './storage';
 
 const SyncContext = createContext({
     isOnline: true,
@@ -77,6 +78,13 @@ export function DataProvider({ children }) {
         () => db.get().meta.lastSyncedAt,
     );
     const pendingOps = useDbSnapshot(() => db.sync.pendingOps().length);
+
+    // Initialize storage layer on mount (async, non-blocking)
+    useEffect(() => {
+        initializeStorage().catch((e) => {
+            console.error('[DataProvider] failed to initialize storage', e);
+        });
+    }, []);
 
     const requestSync = useCallback(async () => {
         if (isSyncing) return;

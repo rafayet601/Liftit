@@ -4,14 +4,28 @@
  * Given the recent history of one exercise and its program targets, suggest
  * next-session weight/reps with a plain-language reason. Transparent rules,
  * no AI. Weights in kg; the increment respects the user's plate units.
+ *
+ * DOUBLE-PROGRESSION: Track both:
+ * 1. Volume progression (weight × reps increase, 3-5% per week)
+ * 2. Intensity progression (1RM improvement)
+ * Suggest deload when both metrics plateau simultaneously.
  */
+
+import { estimate1RM } from './e1rm';
 
 const KG_INCREMENT = 2.5;
 const LB_INCREMENT_AS_KG = 2.268; // 5 lb
 
+// Double-progression thresholds
+const VOLUME_PLATEAU_THRESHOLD = 0.98;
+const INTENSITY_PLATEAU_THRESHOLD = 0.98;
+const MIN_WEEKS_FOR_PLATEAU = 3;
+const DELOAD_INTENSITY_REDUCTION = 0.9;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export function loadIncrement(units = 'kg', isCompound = true) {
     const base = units === 'lbs' ? LB_INCREMENT_AS_KG : KG_INCREMENT;
-    return isCompound ? base : base / 2; // smaller jumps for isolation work
+    return isCompound ? base : base / 2;
 }
 
 function roundToIncrement(weightKg, units) {
@@ -22,14 +36,6 @@ function roundToIncrement(weightKg, units) {
     return Math.round(weightKg / 1.25) * 1.25;
 }
 
-/**
- * sessions: array (newest first) of { sets: [{weight, reps, rpe}] } for ONE
- * exercise — working sets only.
- * targets: { repsMin, repsMax, rpe } from the program (rpe optional).
- * options: { units, isCompound }
- *
- * Returns { action, weight, repsMin, repsMax, reason } — weight in kg.
- */
 export function suggestNextSession(sessions, targets, options = {}) {
     const { units = 'kg', isCompound = true } = options;
     const repsMin = targets?.repsMin ?? 8;
@@ -53,8 +59,6 @@ export function suggestNextSession(sessions, targets, options = {}) {
         return { action: 'start', weight: null, repsMin, repsMax, reason: 'No working sets logged last time.' };
     }
 
-    // Stall detection: 3+ sessions at the same weight without hitting the top
-    // of the rep range → deload ~10%.
     const stalled =
         history.length >= 3 &&
         history.slice(0, 3).every((s) => {
@@ -72,7 +76,6 @@ export function suggestNextSession(sessions, targets, options = {}) {
         };
     }
 
-    // All sets at/above the top of the range, with effort in budget → add load.
     const hitTop = last.minReps >= repsMax;
     const effortOk = !last.avgRpe || last.avgRpe <= targetRpe + 0.5;
     if (hitTop && effortOk) {
@@ -86,7 +89,6 @@ export function suggestNextSession(sessions, targets, options = {}) {
         };
     }
 
-    // Very hard session (avg RPE > 9.25) → repeat with slightly less load.
     if (last.avgRpe && last.avgRpe > 9.25) {
         const weight = roundToIncrement(Math.max(0, last.topWeight - inc), units);
         return {
@@ -98,7 +100,6 @@ export function suggestNextSession(sessions, targets, options = {}) {
         };
     }
 
-    // Default: same weight, chase reps.
     return {
         action: 'hold',
         weight: last.topWeight,
@@ -130,11 +131,6 @@ function fmt(kg, units, isIncrement = false) {
     return `${Math.round(kg * 100) / 100} kg`;
 }
 
-/**
- * Group a flat workout history into per-exercise session lists (newest
- * first), ready for suggestNextSession.
- * workouts: db.workouts.list() output.
- */
 export function sessionsForExercise(workouts, exerciseId, limit = 6) {
     const sessions = [];
     for (const w of workouts) {
@@ -143,4 +139,196 @@ export function sessionsForExercise(workouts, exerciseId, limit = 6) {
         if (sessions.length >= limit) break;
     }
     return sessions;
+}
+
+/* DOUBLE-PROGRESSION ANALYSIS */
+
+export function getSessionMetrics(sets) {
+    const working = (sets || []).filter((s) => !s.isWarmup && s.reps > 0 && s.weight > 0);
+    if (!working.length) return null;
+    
+    const topWeight = Math.max(...working.map((s) => s.weight));
+    const topSets = working.filter((s) => Math.abs(s.weight - topWeight) < 0.01);
+    const avgReps = topSets.reduce((sum, s) => sum + s.reps, 0) / topSets.length;
+    const volumePerSet = topWeight * avgReps;
+    const e1rm = estimate1RM(topWeight, avgReps);
+    
+    return { volumePerSet, e1rm, topWeight, avgReps };
+}
+
+export function analyzeDoubleProgression(sessions) {
+    if (!sessions || sessions.length < 2) {
+        return {
+            volumeProgressionPercent: 0,
+            intensityProgressionPercent: 0,
+            isVolumePlateau: false,
+            isIntensityPlateau: false,
+            weeksSinceLastGain: 0,
+            trend: 'starting'
+        };
+    }
+
+    const metrics = sessions
+        .slice(0, 8)
+        .map((s, i) => ({
+            ...getSessionMetrics(s.sets),
+            date: s.startedAt,
+            index: i
+        }))
+        .filter(m => m !== null)
+        .reverse();
+
+    if (metrics.length < 2) {
+        return {
+            volumeProgressionPercent: 0,
+            intensityProgressionPercent: 0,
+            isVolumePlateau: false,
+            isIntensityPlateau: false,
+            weeksSinceLastGain: 0,
+            trend: 'insufficient_data'
+        };
+    }
+
+    const first = metrics[0];
+    const recent = metrics[metrics.length - 1];
+    const weeksDiff = (new Date(recent.date) - new Date(first.date)) / (7 * DAY_MS);
+    const weeksAnalyzed = Math.max(1, weeksDiff);
+
+    const volumeProgression = ((recent.volumePerSet - first.volumePerSet) / first.volumePerSet) * 100;
+    const volumePercentPerWeek = volumeProgression / weeksAnalyzed;
+
+    const intensityProgression = ((recent.e1rm - first.e1rm) / first.e1rm) * 100;
+    const intensityPercentPerWeek = intensityProgression / weeksAnalyzed;
+
+    const recentWindow = metrics.slice(-Math.min(3, metrics.length));
+    const firstRecent = recentWindow[0];
+    const isVolumePlateau = 
+        recentWindow.every(m => m.volumePerSet >= firstRecent.volumePerSet * VOLUME_PLATEAU_THRESHOLD && 
+                                  m.volumePerSet <= firstRecent.volumePerSet * (2 - VOLUME_PLATEAU_THRESHOLD));
+    
+    const isIntensityPlateau = 
+        recentWindow.every(m => m.e1rm >= firstRecent.e1rm * INTENSITY_PLATEAU_THRESHOLD && 
+                                 m.e1rm <= firstRecent.e1rm * (2 - INTENSITY_PLATEAU_THRESHOLD));
+
+    let weeksSinceLastVolumeGain = 0;
+    let lastVolumeGainIndex = -1;
+    for (let i = recentWindow.length - 1; i >= 1; i--) {
+        if (recentWindow[i].volumePerSet > recentWindow[i - 1].volumePerSet) {
+            lastVolumeGainIndex = i;
+            break;
+        }
+    }
+    if (lastVolumeGainIndex >= 0) {
+        weeksSinceLastVolumeGain = (recentWindow.length - 1 - lastVolumeGainIndex) * (weeksAnalyzed / recentWindow.length);
+    } else {
+        weeksSinceLastVolumeGain = weeksAnalyzed;
+    }
+
+    let trend = 'holding';
+    if (volumeProgression > 3 || intensityProgression > 2) {
+        trend = 'progressing';
+    } else if (isVolumePlateau && isIntensityPlateau && recentWindow.length >= 3) {
+        trend = 'plateaued';
+    } else if (volumeProgression < -2 || intensityProgression < -1) {
+        trend = 'regressing';
+    }
+
+    return {
+        volumeProgressionPercent: volumeProgression,
+        intensityProgressionPercent: intensityProgression,
+        volumePercentPerWeek: volumePercentPerWeek,
+        intensityPercentPerWeek: intensityPercentPerWeek,
+        isVolumePlateau,
+        isIntensityPlateau,
+        weeksSinceLastVolumeGain,
+        trend,
+        recentMetrics: recentWindow,
+        metricsHistory: metrics
+    };
+}
+
+export function getDeloadRecommendation(analysis) {
+    if (!analysis) {
+        return { shouldDeload: false, reason: 'Insufficient data', suggestedIntensityReduction: 0 };
+    }
+
+    const {
+        isVolumePlateau,
+        isIntensityPlateau,
+        recentMetrics = [],
+        weeksSinceLastVolumeGain = 0,
+        trend
+    } = analysis;
+
+    if (isVolumePlateau && isIntensityPlateau && recentMetrics.length >= 3) {
+        const plateauWeeks = Math.ceil(weeksSinceLastVolumeGain);
+        if (plateauWeeks >= MIN_WEEKS_FOR_PLATEAU) {
+            return {
+                shouldDeload: true,
+                reason: `Both volume and intensity plateaued for ${plateauWeeks}+ weeks. Time to deload and rebuild.`,
+                suggestedIntensityReduction: DELOAD_INTENSITY_REDUCTION,
+                plateauWeeks
+            };
+        }
+    }
+
+    if (trend === 'regressing') {
+        return {
+            shouldDeload: true,
+            reason: 'Performance is declining. Consider a deload week to recover.',
+            suggestedIntensityReduction: DELOAD_INTENSITY_REDUCTION,
+        };
+    }
+
+    return {
+        shouldDeload: false,
+        reason: 'No deload needed — keep progressing.',
+        suggestedIntensityReduction: 0
+    };
+}
+
+export function getProgressionRecommendation(sessions, analysis, units = 'kg') {
+    if (!sessions || !sessions.length) {
+        return {
+            title: 'Start tracking',
+            description: 'Log your first session to get progression recommendations.',
+            action: null,
+            priority: 'info'
+        };
+    }
+
+    if (analysis.trend === 'plateaued') {
+        return {
+            title: 'Plateau detected',
+            description: 'Both volume and intensity have stalled. Consider a deload week.',
+            action: 'deload',
+            priority: 'warning',
+            details: `${Math.round(analysis.volumeProgressionPercent)}% volume change, ${Math.round(analysis.intensityProgressionPercent)}% strength change`
+        };
+    }
+
+    if (analysis.trend === 'progressing') {
+        return {
+            title: 'Strong progress',
+            description: `You're making solid gains (${Math.round(analysis.volumePercentPerWeek)}% volume/week).`,
+            action: 'continue',
+            priority: 'success'
+        };
+    }
+
+    if (analysis.trend === 'holding') {
+        return {
+            title: 'Steady state',
+            description: 'Making gradual progress. Keep consistent.',
+            action: 'hold',
+            priority: 'info'
+        };
+    }
+
+    return {
+        title: 'Regressing',
+        description: 'Performance declining. Review recovery and deload if needed.',
+        action: 'deload',
+        priority: 'warning'
+    };
 }

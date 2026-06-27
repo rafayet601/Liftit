@@ -79,9 +79,11 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
     return (
         <div
             className={clsx(
-                'rounded-2xl border p-3 transition-colors',
+                'rounded-2xl border p-3 transition-all duration-200',
                 set.completed
                     ? 'border-emerald-500/25 bg-emerald-500/[0.05]'
+                    : canComplete
+                    ? 'border-accent/20 bg-white/[0.02] shadow-[0_0_16px_-6px_rgba(139,92,246,0.2)]'
                     : 'border-white/[0.07] bg-white/[0.02]',
             )}
         >
@@ -131,15 +133,18 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                     disabled={!canComplete || set.completed}
                     aria-label={`Complete set ${index + 1}`}
                     className={clsx(
-                        'flex h-12 w-12 items-center justify-center rounded-xl border transition-all active:scale-95',
+                        'flex h-12 w-12 items-center justify-center rounded-xl border transition-all active:scale-90',
                         set.completed
-                            ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                            ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300 shadow-[0_0_16px_-4px_rgba(74,222,128,0.4)]'
                             : canComplete
-                              ? 'border-accent/50 bg-accent/15 text-accent hover:bg-accent/25'
+                              ? 'border-accent/50 bg-accent/15 text-accent hover:bg-accent/25 hover:shadow-[0_0_16px_-4px_rgba(139,92,246,0.4)] hover:scale-105'
                               : 'border-white/10 bg-white/[0.02] text-ink-600',
                     )}
                 >
-                    <Check className="h-5 w-5" strokeWidth={2.5} />
+                    <Check
+                        className={clsx('h-5 w-5', set.completed && 'animate-[set-complete_0.4s_cubic-bezier(0.34,1.56,0.64,1)_both]')}
+                        strokeWidth={2.5}
+                    />
                 </button>
             </div>
 

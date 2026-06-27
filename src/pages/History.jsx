@@ -14,6 +14,7 @@ import { useWorkouts } from '../data/DataProvider';
 import { useUnit } from '../contexts/UnitContext';
 import { workoutVolume, prTimeline, e1rmTrend } from '../engine/analytics';
 import { Card, Chip, EmptyState, PageHeader, Sheet } from '../components/ui/Primitives';
+import Glass from '../components/ui/Glass';
 import { useToast } from '../components/ui/Toast';
 
 /**
@@ -48,12 +49,14 @@ export default function History() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <PageHeader
-                eyebrow="Log"
-                title="History"
-                description={`${workouts.length} workout${workouts.length === 1 ? '' : 's'} on record.`}
-                icon={HistoryIcon}
-            />
+            <Glass tint="neutral" glow wave wavePreset="purple" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
+                <PageHeader
+                    eyebrow="Log"
+                    title="History"
+                    description={`${workouts.length} workout${workouts.length === 1 ? '' : 's'} on record.`}
+                    icon={HistoryIcon}
+                />
+            </Glass>
 
             <ul className="space-y-3">
                 {workouts.map((w) => (
@@ -95,7 +98,7 @@ function SessionRow({ workout, hasPR, onOpen }) {
             <button
                 type="button"
                 onClick={onOpen}
-                className="surface surface-hover flex w-full items-center justify-between gap-4 p-4 text-left"
+                className="glass-card glass-card-hover flex w-full items-center justify-between gap-4 p-4 text-left"
             >
                 <div className="flex min-w-0 items-center gap-4">
                     <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02]">
@@ -298,7 +301,7 @@ function Sparkline({ points }) {
         .join(' ');
     return (
         <svg viewBox={`0 0 ${w} ${h}`} className="h-20 w-full" preserveAspectRatio="none" aria-hidden>
-            <path d={path} fill="none" stroke="#ff6b3a" strokeWidth="2.5" strokeLinecap="round" />
+            <path d={path} fill="none" stroke="#8b5cf6" strokeWidth="2.5" strokeLinecap="round" />
         </svg>
     );
 }

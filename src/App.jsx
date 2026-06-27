@@ -38,6 +38,8 @@ import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
 import AuthCallback from './components/auth/AuthCallback';
 import MobileNav from './components/layout/MobileNav';
+import ShaderBackground from './components/ui/ShaderBackground';
+import LinearGradient from './components/ui/LinearGradient';
 
 export const NAV_ITEMS = [
     { name: 'Home', icon: LayoutDashboard, path: '/' },
@@ -61,9 +63,23 @@ function Sidebar() {
 
     return (
         <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 flex-col border-r border-white/[0.07] bg-ink-950 p-5 md:flex">
+            <LinearGradient
+                preset="purple"
+                variant="strip"
+                glow
+                style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: '10%',
+                    right: '10%',
+                    height: '2px',
+                    borderRadius: '999px',
+                    opacity: 0.4,
+                }}
+            />
             {/* Brand */}
-            <Link to="/" className="group mb-10 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-ember text-ink-950 transition-transform group-hover:-rotate-6">
+            <Link to="/" unstable_viewTransition className="group mb-10 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-purple text-ink-950 transition-transform group-hover:-rotate-6">
                     <Dumbbell className="h-5 w-5" strokeWidth={2.4} />
                 </div>
                 <div>
@@ -87,6 +103,7 @@ function Sidebar() {
                         <Link
                             key={item.path}
                             to={item.path}
+                            unstable_viewTransition
                             onClick={() => hapticSelection()}
                             aria-current={isActive ? 'page' : undefined}
                             className={clsx(
@@ -138,6 +155,7 @@ function Sidebar() {
             {/* User card → Settings */}
             <Link
                 to="/settings"
+                unstable_viewTransition
                 className="group flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-accent/30"
             >
                 <div className="flex h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
@@ -173,7 +191,7 @@ function Layout({ children }) {
     }
 
     return (
-        <div className="relative min-h-dvh bg-ink-950 text-ink-200">
+        <div className="relative min-h-dvh bg-transparent text-ink-200">
             <Sidebar />
             <main className="relative flex-1 overflow-x-hidden pb-28 pt-safe md:ml-64 md:pb-10">
                 <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8 md:py-10">
@@ -194,7 +212,7 @@ function TrainerModal() {
 /* -----------------------------------------------------------------
    Routes — local-first: nothing requires login. /login exists for sync.
    ----------------------------------------------------------------- */
-function AppRoutes() {
+export function AppRoutes() {
     const page = (Component) => (
         <Layout>
             <Component />
@@ -239,6 +257,7 @@ export default function App() {
                         <ModalProvider>
                             <ToastProvider>
                                 <Router>
+                                    <ShaderBackground />
                                     <NativeShell />
                                     <AppRoutes />
                                 </Router>

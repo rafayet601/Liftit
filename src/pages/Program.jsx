@@ -17,6 +17,8 @@ import { useActiveProgram } from '../data/DataProvider';
 import { generateProgram, currentProgramWeek, phaseForWeek, scaleTargetsForWeek, GOALS } from '../engine/generator';
 import ExercisePicker from '../components/workout/ExercisePicker';
 import { Card, Chip, PageHeader, ProgressBar, Segmented, Sheet } from '../components/ui/Primitives';
+import Glass from '../components/ui/Glass';
+import LinearGradient from '../components/ui/LinearGradient';
 import { useToast } from '../components/ui/Toast';
 import { hapticMedium, hapticSuccess } from '../lib/platform';
 
@@ -100,14 +102,16 @@ function ProgramView({ program, onNew }) {
             />
 
             {/* Phase timeline */}
-            <Card>
+            <Glass tint="neutral" glow style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
+            <Card className="glass-card-glow border-accent/20">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <div className="eyebrow mb-1">
+                        <div className="eyebrow mb-1 flex items-center gap-2">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" style={{ boxShadow: '0 0 6px rgba(139,92,246,0.8)' }} />
                             Week {week} of {program.durationWeeks}
                         </div>
-                        <h2 className="font-display text-xl font-bold text-white">
-                            {phaseForWeek(week, program.durationWeeks).name} phase
+                        <h2 className="font-display text-2xl font-bold text-white">
+                            <span className="text-gradient-purple">{phaseForWeek(week, program.durationWeeks).name}</span> phase
                         </h2>
                         <p className="mt-1 text-sm text-ink-400">
                             {phaseForWeek(week, program.durationWeeks).blurb}
@@ -129,10 +133,11 @@ function ProgramView({ program, onNew }) {
                                 type="button"
                                 onClick={() => setViewWeek(w)}
                                 className={clsx(
-                                    'flex shrink-0 flex-col items-center rounded-xl border px-3 py-2 transition-colors',
+                                    'flex shrink-0 flex-col items-center rounded-xl border px-3 py-2 transition-all duration-200',
                                     w === viewWeek
-                                        ? 'border-accent/50 bg-accent/10 text-accent'
-                                        : 'border-white/[0.07] bg-white/[0.02] text-ink-500 hover:text-white',
+                                        ? 'border-accent/50 bg-accent/10 text-accent shadow-[0_0_12px_-4px_rgba(139,92,246,0.4)] scale-105'
+                                        : 'border-white/[0.07] bg-white/[0.02] text-ink-500 hover:text-white hover:border-white/20',
+                                    w === week && w !== viewWeek && 'border-white/20',
                                 )}
                             >
                                 <span className="text-xs font-bold">W{w}</span>
@@ -142,6 +147,7 @@ function ProgramView({ program, onNew }) {
                     })}
                 </div>
             </Card>
+            </Glass>
 
             {/* Week-adjusted day cards */}
             <div className="space-y-3">
@@ -149,7 +155,13 @@ function ProgramView({ program, onNew }) {
                     <h2 className="font-display text-lg font-bold text-white">
                         Week {viewWeek} targets
                     </h2>
-                    <Chip tone={phase.name === 'Deload' ? 'steel' : 'accent'}>{phase.name}</Chip>
+                    <span className={(() => {
+                        const n = phase.name.toLowerCase();
+                        if (n.includes('deload')) return 'phase-badge phase-badge-deload';
+                        if (n.includes('peak')) return 'phase-badge phase-badge-peaking';
+                        if (n.includes('intensif')) return 'phase-badge phase-badge-intensification';
+                        return 'phase-badge phase-badge-accumulation';
+                    })()}>{phase.name}</span>
                 </div>
                 {program.days.map((day) => (
                     <DayCard
@@ -197,7 +209,7 @@ function ProgramView({ program, onNew }) {
 function DayCard({ day, viewWeek, durationWeeks, onSwap, onAdd, onRemove, onAdjustSets }) {
     const [open, setOpen] = useState(false);
     return (
-        <Card padded={false} className="overflow-hidden">
+        <Card padded={false} className="overflow-hidden holo-card">
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
@@ -299,7 +311,7 @@ function Wizard({ hasExisting, onDone, onCancel }) {
                 }
             />
 
-            <Card className="space-y-6">
+            <Card className="space-y-6 glass-card-glow border-accent/30 shadow-glass-glow-purple">
                 <Field label="Goal">
                     <Segmented
                         value={config.goal}
@@ -349,7 +361,7 @@ function Wizard({ hasExisting, onDone, onCancel }) {
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
                     {preview.days.map((day) => (
-                        <div key={day.dayNumber} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+                        <div key={day.dayNumber} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 holo-card">
                             <p className="mb-1.5 text-sm font-bold text-white">
                                 Day {day.dayNumber} · {day.name}
                             </p>

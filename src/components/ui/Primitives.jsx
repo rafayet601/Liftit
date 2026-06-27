@@ -109,7 +109,7 @@ export function StatTile({ label, value, delta, icon: Icon, accent = false, clas
                 <span
                     className={clsx(
                         'font-display text-3xl font-bold tracking-tight tabular-nums md:text-4xl',
-                        accent ? 'text-gradient-ember' : 'text-white',
+                        accent ? 'text-gradient-purple' : 'text-white',
                     )}
                 >
                     {value}
