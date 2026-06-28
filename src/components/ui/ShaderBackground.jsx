@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { compileShader, linkProgram, createQuadBuffer, resizeCanvas, cleanupWebGL } from '../../lib/webgl-utils';
 
 /**
  * ShaderBackground — full-screen fixed WebGL canvas with an animated
@@ -98,33 +99,6 @@ void main() {
 }
 `;
 
-function createShader(gl, type, src) {
-  const s = gl.createShader(type);
-  if (!s) return null;
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    console.warn('[ShaderBG] Shader compile error:', gl.getShaderInfoLog(s));
-    gl.deleteShader(s);
-    return null;
-  }
-  return s;
-}
-
-function createProgram(gl, vert, frag) {
-  const p = gl.createProgram();
-  if (!p) return null;
-  gl.attachShader(p, vert);
-  gl.attachShader(p, frag);
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    console.warn('[ShaderBG] Program link error:', gl.getProgramInfoLog(p));
-    gl.deleteProgram(p);
-    return null;
-  }
-  return p;
-}
-
 export default function ShaderBackground() {
   const canvasRef = useRef(null);
 
@@ -134,39 +108,36 @@ export default function ShaderBackground() {
 
     let gl, vert, frag, program, buf, ro, rafId;
 
+    /* If WebGL init or shader compilation fails, hide the canvas. It's an
+       alpha:false (opaque) layer at z-index -1, and on headless / GPU-blocklisted
+       stacks an uncleared buffer can paint solid white over the carbon body.
+       Hiding it lets the dark body show through instead of a white screen. */
+    const bail = () => {
+      canvas.style.display = 'none';
+    };
+
     try {
       gl = canvas.getContext('webgl', { antialias: false, alpha: false, depth: false });
       if (!gl) {
         console.warn('[ShaderBG] WebGL not supported — background disabled.');
-        return;
+        return bail();
       }
 
-      vert = createShader(gl, gl.VERTEX_SHADER, VERT_SRC);
-      frag = createShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
-      if (!vert || !frag) return;
+      vert = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC, 'ShaderBG');
+      frag = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC, 'ShaderBG');
+      if (!vert || !frag) return bail();
 
-      program = createProgram(gl, vert, frag);
-      if (!program) return;
+      program = linkProgram(gl, vert, frag, 'ShaderBG');
+      if (!program) return bail();
 
-      buf = gl.createBuffer();
-      if (!buf) return;
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([-1, -1,  1, -1, -1,  1,  -1,  1,  1, -1,  1,  1]),
-        gl.STATIC_DRAW,
-      );
+      buf = createQuadBuffer(gl);
+      if (!buf) return bail();
 
       const posLoc = gl.getAttribLocation(program, 'a_position');
       const timeLoc = gl.getUniformLocation(program, 'u_time');
       const resLoc  = gl.getUniformLocation(program, 'u_resolution');
 
-      const resize = () => {
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-        canvas.width  = Math.floor(canvas.offsetWidth  * dpr);
-        canvas.height = Math.floor(canvas.offsetHeight * dpr);
-        gl.viewport(0, 0, canvas.width, canvas.height);
-      };
+      const resize = () => resizeCanvas(gl, canvas);
       resize();
 
       ro = new ResizeObserver(resize);
@@ -190,20 +161,14 @@ export default function ShaderBackground() {
       render();
     } catch (e) {
       console.warn('[ShaderBG] WebGL init failed:', e);
+      bail();
       return;
     }
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
       if (ro) ro.disconnect();
-      if (gl) {
-        if (buf) gl.deleteBuffer(buf);
-        if (vert) gl.deleteShader(vert);
-        if (frag) gl.deleteShader(frag);
-        if (program) gl.deleteProgram(program);
-        const ext = gl.getExtension('WEBGL_lose_context');
-        if (ext) ext.loseContext();
-      }
+      if (gl) cleanupWebGL(gl, { buf, vs: vert, fs: frag, prog: program });
     };
   }, []);
 
@@ -219,6 +184,11 @@ export default function ShaderBackground() {
         zIndex: -1,
         pointerEvents: 'none',
         display: 'block',
+        /* Dark base so the carbon theme holds even when WebGL is unavailable
+           (older Android WebViews, GPU blocklists, iOS low-power mode). Without
+           it the canvas is non-dark and backdrop-filter blurs glass surfaces
+           into unreadable white. */
+        background: '#0b0b0c',
       }}
     />
   );

@@ -185,7 +185,7 @@ function SessionLauncher() {
     );
 }
 
-function EngineTeaser({ workouts, program, unit, displayWeight }) {
+const EngineTeaser = React.memo(function EngineTeaser({ workouts, program, unit, displayWeight }) {
     const teaser = useMemo(() => {
         if (!program || !workouts.length) return null;
         const day = program.days.find((d) => d.exercises.length);
@@ -220,7 +220,7 @@ function EngineTeaser({ workouts, program, unit, displayWeight }) {
             </div>
         </Card>
     );
-}
+})
 
 /* ==================================================================
    Active session
@@ -475,7 +475,7 @@ function ActiveSession() {
     );
 }
 
-function ExerciseCard({
+const ExerciseCard = React.memo(function ExerciseCard({
     entry,
     index,
     workouts,
@@ -595,7 +595,7 @@ function ExerciseCard({
             )}
         </div>
     );
-}
+})
 
 function SummarySheet({ summary, unit, displayWeight, onClose }) {
     const { workout, prs, volume, durationSec } = summary;
@@ -656,7 +656,7 @@ function SummarySheet({ summary, unit, displayWeight, onClose }) {
     );
 }
 
-function SummaryStat({ icon: Icon, label, value, sub }) {
+const SummaryStat = React.memo(function SummaryStat({ icon: Icon, label, value, sub }) {
     return (
         <div className="stats-card">
             <div className="stats-card-inner text-center">
@@ -671,7 +671,7 @@ function SummaryStat({ icon: Icon, label, value, sub }) {
             </div>
         </div>
     );
-}
+})
 
 function ElapsedClock({ startedAt }) {
     const [now, setNow] = useState(() => Date.now());

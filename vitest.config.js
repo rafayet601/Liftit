@@ -13,6 +13,11 @@ export default defineConfig({
         threads: {
             singleThread: true,
         },
-        isolate: false,
+        // Each test file gets a fresh module registry. Required because
+        // e2e.test.jsx uses vi.mock() on lib/api, lib/platform and recharts —
+        // with isolate:false those mocks fail to apply once another file has
+        // already loaded the real modules into the shared registry, and the
+        // db singleton's in-memory cache leaks across files.
+        isolate: true,
     },
 });

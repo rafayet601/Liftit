@@ -25,6 +25,7 @@ import { ModalProvider, useModal } from './contexts/ModalContext';
 import { DataProvider, useSettings, useSyncStatus } from './data/DataProvider';
 import TrainerChat from './components/ai/TrainerChat';
 import ErrorBoundary from './components/ui/ErrorBoundary';
+import RouteErrorBoundary from './components/ui/RouteErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
 import { initNativeShell, isStandalone, hapticSelection } from './lib/platform';
 
@@ -215,7 +216,9 @@ function TrainerModal() {
 export function AppRoutes() {
     const page = (Component) => (
         <Layout>
-            <Component />
+            <RouteErrorBoundary>
+                <Component />
+            </RouteErrorBoundary>
         </Layout>
     );
     return (

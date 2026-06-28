@@ -9,7 +9,7 @@ import {
     Tooltip,
     ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, Trophy, Dumbbell, Flame, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
+import { TrendingUp, Trophy, Dumbbell, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { db } from '../data/db';
 import { useWorkouts } from '../data/DataProvider';

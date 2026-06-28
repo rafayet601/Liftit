@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
     PlayCircle,
@@ -11,8 +11,6 @@ import {
     Dumbbell,
     MessageCircle,
     TrendingUp,
-    Target,
-    Zap,
 } from 'lucide-react';
 import { db } from '../data/db';
 import { useWorkouts, useActiveProgram, useSettings } from '../data/DataProvider';
@@ -26,7 +24,9 @@ import {
 } from '../engine/analytics';
 import { currentProgramWeek, phaseForWeek } from '../engine/generator';
 import { Card, Chip, StatTile, ProgressBar } from '../components/ui/Primitives';
-import { WeeklyVolumeBarChart } from '../components/charts/VolumeChart';
+const LazyWeeklyVolumeBarChart = React.lazy(() =>
+    import('../components/charts/VolumeChart').then(m => ({ default: m.WeeklyVolumeBarChart }))
+);
 import WaveDistortion from '../components/ui/WaveDistortion';
 import LinearGradient from '../components/ui/LinearGradient';
 import Glass from '../components/ui/Glass';
@@ -43,7 +43,7 @@ function formatVolume(v) {
 }
 
 /** Animated progress ring for weekly volume target */
-function ProgressRing({ value = 0, max = 100, size = 72, strokeWidth = 5 }) {
+const ProgressRing = React.memo(function ProgressRing({ value = 0, max = 100, size = 72, strokeWidth = 5 }) {
     const r = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * r;
     const pct = Math.min(1, value / (max || 1));
@@ -100,7 +100,7 @@ function ProgressRing({ value = 0, max = 100, size = 72, strokeWidth = 5 }) {
             </text>
         </svg>
     );
-}
+})
 
 /** Phase name → badge color map */
 function getPhaseBadgeClass(phaseName = '') {
@@ -378,7 +378,9 @@ export default function Home() {
                             </p>
                         ) : (
                             <div className="h-44">
-                                <WeeklyVolumeBarChart data={series} height={170} />
+                                <Suspense fallback={<div className="h-44 rounded-2xl bg-white/[0.03] animate-pulse" />}>
+                                <LazyWeeklyVolumeBarChart data={series} height={170} />
+                            </Suspense>
                             </div>
                         )}
                     </div>
