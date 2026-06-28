@@ -87,7 +87,7 @@ export default function History() {
     );
 }
 
-function SessionRow({ workout, hasPR, onOpen }) {
+const SessionRow = React.memo(function SessionRow({ workout, hasPR, onOpen }) {
     const { unit, displayWeight } = useUnit();
     const volume = workoutVolume(workout);
     const date = new Date(workout.startedAt);
@@ -127,7 +127,7 @@ function SessionRow({ workout, hasPR, onOpen }) {
             </button>
         </li>
     );
-}
+})
 
 function SessionDetail({ workout, onClose, onExercise }) {
     const { unit, displayWeight } = useUnit();

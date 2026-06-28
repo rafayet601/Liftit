@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { compileShader, linkProgram, createQuadBuffer, resizeCanvas, cleanupWebGL } from '../../lib/webgl-utils';
 
 const VERT = /* glsl */`
 attribute vec2 a_pos;
@@ -70,33 +71,6 @@ void main() {
 }
 `;
 
-function compile(gl, type, src) {
-  const s = gl.createShader(type);
-  if (!s) return null;
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    console.warn('[WaveDistortion]', gl.getShaderInfoLog(s));
-    gl.deleteShader(s);
-    return null;
-  }
-  return s;
-}
-
-function link(gl, vs, fs) {
-  const p = gl.createProgram();
-  if (!p) return null;
-  gl.attachShader(p, vs);
-  gl.attachShader(p, fs);
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    console.warn('[WaveDistortion]', gl.getProgramInfoLog(p));
-    gl.deleteProgram(p);
-    return null;
-  }
-  return p;
-}
-
 const PRESETS = {
   purple: { color1: [0.545, 0.361, 0.965], color2: [0.655, 0.545, 0.980] },
   steel: { color1: [0.56, 0.69, 0.81], color2: [0.72, 0.80, 0.89] },
@@ -123,21 +97,26 @@ export default function WaveDistortion({
 
     let gl, vs, fs, prog, buf, ro, raf;
 
+    /* Hide the canvas if WebGL init / shader compilation fails — an uncleared
+       buffer can paint a white wash over the hero card on headless or
+       GPU-blocklisted stacks. The styled card behind it stays intact. */
+    const bail = () => {
+      canvas.style.display = 'none';
+    };
+
     try {
       gl = canvas.getContext('webgl', { antialias: false, alpha: true, depth: false, premultipliedAlpha: false });
-      if (!gl) return;
+      if (!gl) return bail();
 
-      vs = compile(gl, gl.VERTEX_SHADER, VERT);
-      fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
-      if (!vs || !fs) return;
+      vs = compileShader(gl, gl.VERTEX_SHADER, VERT, 'WaveDistortion');
+      fs = compileShader(gl, gl.FRAGMENT_SHADER, FRAG, 'WaveDistortion');
+      if (!vs || !fs) return bail();
 
-      prog = link(gl, vs, fs);
-      if (!prog) return;
+      prog = linkProgram(gl, vs, fs, 'WaveDistortion');
+      if (!prog) return bail();
 
-      buf = gl.createBuffer();
-      if (!buf) return;
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+      buf = createQuadBuffer(gl);
+      if (!buf) return bail();
 
       const aPos = gl.getAttribLocation(prog, 'a_pos');
       const uTime = gl.getUniformLocation(prog, 'u_time');
@@ -153,12 +132,7 @@ export default function WaveDistortion({
       const c1 = color1 || p.color1;
       const c2 = color2 || p.color2;
 
-      const resize = () => {
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-        canvas.width = Math.floor(canvas.offsetWidth * dpr);
-        canvas.height = Math.floor(canvas.offsetHeight * dpr);
-        gl.viewport(0, 0, canvas.width, canvas.height);
-      };
+      const resize = () => resizeCanvas(gl, canvas);
       resize();
 
       ro = new ResizeObserver(resize);
@@ -190,20 +164,14 @@ export default function WaveDistortion({
       render();
     } catch (e) {
       console.warn('[WaveDistortion] WebGL init failed:', e);
+      bail();
       return;
     }
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
       if (ro) ro.disconnect();
-      if (gl) {
-        if (buf) gl.deleteBuffer(buf);
-        if (vs) gl.deleteShader(vs);
-        if (fs) gl.deleteShader(fs);
-        if (prog) gl.deleteProgram(prog);
-        const ext = gl.getExtension('WEBGL_lose_context');
-        if (ext) ext.loseContext();
-      }
+      if (gl) cleanupWebGL(gl, { buf, vs, fs, prog });
     };
   }, [preset, amplitude, frequency, speed, opacity, color1, color2]);
 
