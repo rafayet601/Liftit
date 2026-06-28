@@ -15,6 +15,7 @@ model User {
   providerId       String
   emailVerified    DateTime?
   image            String?
+  tokensInvalidatedAt DateTime?
   profile          Profile?
   workoutLogs      WorkoutLog[]
   programs         Program[]
