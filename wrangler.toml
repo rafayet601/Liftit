@@ -20,5 +20,4 @@ compatibility_date = "2026-01-15"
 [[d1_databases]]
 binding = "DB"
 database_name = "liftit"
-# Replace with the id printed by: npx wrangler d1 create liftit
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "17518621-e292-4aa7-888a-c15f4f38ad90"

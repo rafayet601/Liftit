@@ -3,6 +3,11 @@
 Liftit runs on **Cloudflare Pages** — static app plus a `/api/*` Pages Function
 backed by D1. Everything below fits inside Cloudflare's free tier.
 
+> **Current deployment:** https://liftit-4mq.pages.dev — Pages project
+> `liftit`, D1 database `liftit` (id in `wrangler.toml`), `JWT_SECRET` set.
+> OAuth providers are not configured yet, so the login page hides the sign-in
+> buttons; complete step 5 below and redeploy to enable accounts.
+
 | Piece | Service | Free tier | Cost |
 |---|---|---|---|
 | React app | Pages | unlimited bandwidth, 500 builds/mo | $0 |

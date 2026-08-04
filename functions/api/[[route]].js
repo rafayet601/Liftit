@@ -165,6 +165,16 @@ app.post('/auth/logout', (c) => {
     return c.json({ message: 'Logged out' });
 });
 
+// Which providers this deployment has credentials for. The login page only
+// renders buttons for these, so an instance with no OAuth apps configured
+// shows no dead sign-in buttons. Also must precede /auth/:provider.
+app.get('/auth/providers', (c) => {
+    const providers = Object.keys(PROVIDERS).filter(
+        (name) => c.env[PROVIDERS[name].idKey] && c.env[PROVIDERS[name].secretKey],
+    );
+    return c.json({ providers });
+});
+
 app.get('/auth/:provider', async (c) => {
     const name = c.req.param('provider');
     const provider = PROVIDERS[name];
@@ -172,7 +182,8 @@ app.get('/auth/:provider', async (c) => {
 
     const clientId = c.env[provider.idKey];
     if (!clientId) {
-        return c.redirect(`${appOrigin(c)}/login?error=provider_not_configured`);
+        // /auth/callback is the screen that renders sign-in errors.
+        return c.redirect(`${appOrigin(c)}/auth/callback?error=provider_not_configured`);
     }
 
     // CSRF: round-trip an unguessable value through a short-lived cookie.
@@ -200,7 +211,7 @@ app.get('/auth/:provider/callback', async (c) => {
     const origin = appOrigin(c);
     if (!provider) return c.json({ error: 'Unknown provider' }, 404);
 
-    const fail = (reason) => c.redirect(`${origin}/login?error=${reason}`);
+    const fail = (reason) => c.redirect(`${origin}/auth/callback?error=${reason}`);
 
     const code = c.req.query('code');
     const state = c.req.query('state');

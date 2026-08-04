@@ -250,6 +250,24 @@ export const db = {
             });
             enqueue('workout.delete', { id });
         },
+        /**
+         * Merge workouts pulled down from the server. Unlike save(), this
+         * never enqueues sync ops — these records just came *from* the
+         * server, so queueing them would echo every pull back as a push.
+         * Only ids this device hasn't seen are added; local copies win.
+         */
+        importRemote(workouts) {
+            const existing = new Set(load().workouts.map((w) => w.id));
+            const fresh = (workouts ?? [])
+                .filter((w) => w?.id && !existing.has(w.id))
+                .map((w) => createWorkout(w));
+            if (fresh.length) {
+                commit((d) => {
+                    d.workouts.push(...fresh);
+                });
+            }
+            return fresh.length;
+        },
     },
 
     programs: {

@@ -14,7 +14,7 @@
  * (i.e. every custom exercise).
  */
 
-import { put, del, isAuthenticated, backendAvailable } from '../lib/api';
+import { get, put, del, isAuthenticated, backendAvailable } from '../lib/api';
 import { db } from './db';
 
 function mapWorkoutPayload(workout) {
@@ -41,22 +41,26 @@ function mapWorkoutPayload(workout) {
 let syncing = false;
 
 /**
- * Drain the sync queue. Returns { pushed, remaining } counts.
+ * Sync with the server: push queued local mutations, then pull down any
+ * workouts this device hasn't seen (first sign-in on a new device, or
+ * sessions logged elsewhere). Returns { pushed, pulled, remaining }.
  * Safe to call repeatedly; concurrent calls coalesce.
  */
 export async function runSync() {
-    if (syncing) return { pushed: 0, remaining: db.sync.pendingOps().length };
+    const idle = () => ({ pushed: 0, pulled: 0, remaining: db.sync.pendingOps().length });
+    if (syncing) return idle();
     if (!backendAvailable() || !isAuthenticated() || !navigator.onLine || db.meta.isDemo()) {
-        return { pushed: 0, remaining: db.sync.pendingOps().length };
+        return idle();
     }
 
     syncing = true;
     const done = [];
+    let pulled = 0;
+    let authFailed = false;
     try {
-        const ops = db.sync.pendingOps();
-        if (!ops.length) return { pushed: 0, remaining: 0 };
-
-        for (const op of ops) {
+        // Push. Note no early-out on an empty queue: a fresh device has
+        // nothing to push but still needs the pull below.
+        for (const op of db.sync.pendingOps()) {
             try {
                 if (op.type === 'workout.save') {
                     await put(`/workouts/${op.payload.id}`, mapWorkoutPayload(op.payload));
@@ -70,13 +74,29 @@ export async function runSync() {
                 done.push(op.id);
             } catch (err) {
                 // Leave failed ops queued; stop on auth errors.
-                if (err?.response?.status === 401) break;
+                if (err?.response?.status === 401) {
+                    authFailed = true;
+                    break;
+                }
                 console.warn(`[sync] op ${op.type} failed`, err?.message ?? err);
             }
         }
 
         if (done.length) db.sync.markDone(done);
-        return { pushed: done.length, remaining: db.sync.pendingOps().length };
+
+        // Pull — pushed ops are on the server now, so merging only adds ids
+        // this device is missing; local copies always win.
+        if (!authFailed) {
+            try {
+                const res = await get('/workouts');
+                const remote = res?.data?.data;
+                if (Array.isArray(remote)) pulled = db.workouts.importRemote(remote);
+            } catch (err) {
+                console.warn('[sync] pull failed', err?.message ?? err);
+            }
+        }
+
+        return { pushed: done.length, pulled, remaining: db.sync.pendingOps().length };
     } finally {
         syncing = false;
     }
