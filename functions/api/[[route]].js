@@ -19,6 +19,7 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { chunk, clampText, LIMITS } from './_lib';
 
 const SESSION_COOKIE = 'token';
 const STATE_COOKIE = 'oauth_state';
@@ -355,20 +356,26 @@ app.get('/workouts', async (c) => {
 
     const { results: workouts } = await c.env.DB.prepare(
         `SELECT id, client_id, name, notes, started_at, completed_at, duration_sec
-         FROM workouts WHERE user_id = ? ORDER BY started_at DESC LIMIT 500`,
+         FROM workouts WHERE user_id = ? ORDER BY started_at DESC LIMIT ?`,
     )
-        .bind(user.id)
+        .bind(user.id, LIMITS.workouts)
         .all();
 
     if (!workouts.length) return c.json({ data: [] });
 
-    const placeholders = workouts.map(() => '?').join(',');
-    const { results: sets } = await c.env.DB.prepare(
-        `SELECT workout_id, exercise_id, set_number, weight, reps, rpe, is_warmup, completed_at
-         FROM workout_sets WHERE workout_id IN (${placeholders}) ORDER BY set_number`,
-    )
-        .bind(...workouts.map((w) => w.id))
-        .all();
+    // One placeholder per workout blows D1's bound-parameter ceiling once a
+    // user passes ~100 workouts — which used to 500 this endpoint outright,
+    // permanently, for anyone with a few months of training logged. Fetch the
+    // sets in bounded chunks instead.
+    const ids = workouts.map((w) => w.id);
+    const batches = chunk(ids).map((group) =>
+        c.env.DB.prepare(
+            `SELECT workout_id, exercise_id, set_number, weight, reps, rpe, is_warmup, completed_at
+             FROM workout_sets WHERE workout_id IN (${group.map(() => '?').join(',')})
+             ORDER BY set_number`,
+        ).bind(...group),
+    );
+    const sets = (await c.env.DB.batch(batches)).flatMap((r) => r.results ?? []);
 
     const byWorkout = new Map();
     for (const s of sets) {
@@ -408,6 +415,9 @@ app.put('/workouts/:clientId', async (c) => {
     if (response) return response;
 
     const clientId = c.req.param('clientId');
+    if (!clientId || clientId.length > LIMITS.clientId) {
+        return c.json({ error: 'Invalid workout id' }, 400);
+    }
     let body;
     try {
         body = await c.req.json();
@@ -415,7 +425,11 @@ app.put('/workouts/:clientId', async (c) => {
         return c.json({ error: 'Invalid JSON' }, 400);
     }
 
-    const sets = Array.isArray(body.sets) ? body.sets.slice(0, 500) : [];
+    // Free-tier D1 is a shared 5 GB and the client is not trusted to bound
+    // its own payloads, so clamp rather than store whatever arrives.
+    const name = clampText(body.name, LIMITS.name);
+    const notes = clampText(body.notes, LIMITS.notes);
+    const sets = Array.isArray(body.sets) ? body.sets.slice(0, LIMITS.sets) : [];
     const startedAt = toMillis(body.startedAt) ?? Date.now();
     const now = Date.now();
 
@@ -433,8 +447,8 @@ app.put('/workouts/:clientId', async (c) => {
                   `UPDATE workouts SET name = ?, notes = ?, started_at = ?, completed_at = ?,
                    duration_sec = ?, updated_at = ? WHERE id = ?`,
               ).bind(
-                  body.name ?? null,
-                  body.notes ?? null,
+                  name,
+                  notes,
                   startedAt,
                   toMillis(body.completedAt),
                   Number(body.durationSec) || 0,
@@ -448,8 +462,8 @@ app.put('/workouts/:clientId', async (c) => {
                   workoutId,
                   user.id,
                   clientId,
-                  body.name ?? null,
-                  body.notes ?? null,
+                  name,
+                  notes,
                   startedAt,
                   toMillis(body.completedAt),
                   Number(body.durationSec) || 0,
@@ -465,7 +479,7 @@ app.put('/workouts/:clientId', async (c) => {
             ).bind(
                 uid(),
                 workoutId,
-                String(s.exerciseId ?? ''),
+                clampText(s.exerciseId, LIMITS.exerciseId) ?? '',
                 Number(s.setNumber) || i + 1,
                 Number.isFinite(Number(s.weight)) ? Number(s.weight) : null,
                 Number.isFinite(Number(s.reps)) ? Number(s.reps) : null,

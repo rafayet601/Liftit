@@ -38,16 +38,33 @@ function mapWorkoutPayload(workout) {
     };
 }
 
+/** Short, user-showable description of a failed request. */
+function describeFailure(err) {
+    const status = err?.response?.status;
+    if (status) return `server responded ${status}`;
+    return err?.message ?? String(err);
+}
+
 let syncing = false;
 
 /**
  * Sync with the server: push queued local mutations, then pull down any
  * workouts this device hasn't seen (first sign-in on a new device, or
- * sessions logged elsewhere). Returns { pushed, pulled, remaining }.
+ * sessions logged elsewhere).
+ *
+ * Returns { pushed, pulled, remaining, error }, where `error` is null on a
+ * clean run and otherwise { stage, message }. Failures are reported, never
+ * thrown: a swallowed pull error is indistinguishable from an empty account,
+ * so a broken server used to look like a successful sync on a fresh device.
  * Safe to call repeatedly; concurrent calls coalesce.
  */
 export async function runSync() {
-    const idle = () => ({ pushed: 0, pulled: 0, remaining: db.sync.pendingOps().length });
+    const idle = () => ({
+        pushed: 0,
+        pulled: 0,
+        remaining: db.sync.pendingOps().length,
+        error: null,
+    });
     if (syncing) return idle();
     if (!backendAvailable() || !isAuthenticated() || !navigator.onLine || db.meta.isDemo()) {
         return idle();
@@ -57,6 +74,9 @@ export async function runSync() {
     const done = [];
     let pulled = 0;
     let authFailed = false;
+    let authError = null;
+    let pushError = null;
+    let pullError = null;
     try {
         // Push. Note no early-out on an empty queue: a fresh device has
         // nothing to push but still needs the pull below.
@@ -76,9 +96,13 @@ export async function runSync() {
                 // Leave failed ops queued; stop on auth errors.
                 if (err?.response?.status === 401) {
                     authFailed = true;
+                    authError = { stage: 'auth', message: 'your session expired' };
                     break;
                 }
                 console.warn(`[sync] op ${op.type} failed`, err?.message ?? err);
+                // Report the first failure only — the rest are usually the
+                // same outage, and the ops stay queued for the next attempt.
+                pushError = pushError ?? { stage: 'push', message: describeFailure(err) };
             }
         }
 
@@ -93,10 +117,19 @@ export async function runSync() {
                 if (Array.isArray(remote)) pulled = db.workouts.importRemote(remote);
             } catch (err) {
                 console.warn('[sync] pull failed', err?.message ?? err);
+                pullError = { stage: 'pull', message: describeFailure(err) };
             }
         }
 
-        return { pushed: done.length, pulled, remaining: db.sync.pendingOps().length };
+        return {
+            pushed: done.length,
+            pulled,
+            remaining: db.sync.pendingOps().length,
+            // Auth first (it aborted the run), then pull — a failed pull can
+            // leave this device missing history, while a failed push op is
+            // still queued and will be retried.
+            error: authError ?? pullError ?? pushError,
+        };
     } finally {
         syncing = false;
     }

@@ -24,6 +24,7 @@ const SyncContext = createContext({
     isSyncing: false,
     pendingOps: 0,
     lastSyncedAt: null,
+    syncError: null,
     requestSync: () => {},
 });
 
@@ -77,6 +78,7 @@ export function DataProvider({ children }) {
     const [lastSyncedAt, setLastSyncedAt] = useState(
         () => db.get().meta.lastSyncedAt,
     );
+    const [syncError, setSyncError] = useState(null);
     const pendingOps = useDbSnapshot(() => db.sync.pendingOps().length);
 
     // Initialize storage layer on mount (async, non-blocking)
@@ -92,6 +94,13 @@ export function DataProvider({ children }) {
         try {
             const result = await runSync();
             if (result.pushed > 0) setLastSyncedAt(db.get().meta.lastSyncedAt);
+            // Carry the failure into context so the UI can say something.
+            // Reporting "synced" on a broken server is what hid the problem.
+            setSyncError(result.error ?? null);
+        } catch (err) {
+            // runSync is best-effort and shouldn't throw; if it ever does,
+            // treat it as a failed sync rather than an unhandled rejection.
+            setSyncError({ stage: 'sync', message: err?.message ?? String(err) });
         } finally {
             setIsSyncing(false);
         }
@@ -120,8 +129,8 @@ export function DataProvider({ children }) {
     }, [pendingOps, isOnline]);
 
     const value = useMemo(
-        () => ({ isOnline, isSyncing, pendingOps, lastSyncedAt, requestSync }),
-        [isOnline, isSyncing, pendingOps, lastSyncedAt, requestSync],
+        () => ({ isOnline, isSyncing, pendingOps, lastSyncedAt, syncError, requestSync }),
+        [isOnline, isSyncing, pendingOps, lastSyncedAt, syncError, requestSync],
     );
 
     return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
