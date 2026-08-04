@@ -80,6 +80,13 @@ updates:
     labels:
       - ci
     groups:
+      # Minor/patch only, matching the npm groups. Without this restriction
+      # the first run swept actions/checkout and setup-node from v4 straight
+      # to v7 inside a routine-looking grouped PR; action majors change the
+      # runner's Node version and deserve to arrive on their own.
       actions:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
