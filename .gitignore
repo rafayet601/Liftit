@@ -20,3 +20,7 @@ Thumbs.db
 *.swp
 *.swo
 *.bak
+
+# Cloudflare local secrets
+.dev.vars
+.wrangler

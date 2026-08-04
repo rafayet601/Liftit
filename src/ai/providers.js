@@ -3,16 +3,15 @@
  *
  * The user picks a provider in Settings and pastes their own API key; the
  * key lives only in db.settings on this device (excluded from export and
- * never synced). Chat calls go straight from the browser to the provider.
+ * never synced). Chat calls go straight from the browser to the provider —
+ * the app's own backend is never in the path.
  *
- * Resolution order for the Coach:
- *   1. user-configured provider here
- *   2. the app server's built-in /ai/chat (when signed in)
- *   3. a clear "configure a provider" message
+ * This is deliberate: a hosted coach would bill the operator's key for every
+ * message, which is the one thing that stops Liftit's hosting from being
+ * free. BYO keeps inference cost with whoever chose the model.
  */
 
 import { db } from '../data/db';
-import { post, isAuthenticated } from '../lib/api';
 
 export const AI_PROVIDERS = {
     none: { label: 'Off', defaultModel: '' },
@@ -31,9 +30,9 @@ export function hasUserProvider() {
     return ai.provider !== 'none' && Boolean(ai.apiKey) && (ai.provider !== 'custom' || Boolean(ai.baseUrl));
 }
 
-/** True if *some* path to an AI coach exists. */
+/** True if a path to an AI coach exists. */
 export function coachAvailable() {
-    return hasUserProvider() || isAuthenticated();
+    return hasUserProvider();
 }
 
 /**
@@ -41,24 +40,12 @@ export function coachAvailable() {
  * Returns the assistant's reply text. Throws with a friendly message.
  */
 export async function chat(messages, systemPrompt) {
-    if (hasUserProvider()) {
-        const ai = getAiConfig();
-        if (ai.provider === 'anthropic') return anthropicChat(ai, messages, systemPrompt);
-        return openAiCompatChat(ai, messages, systemPrompt);
+    if (!hasUserProvider()) {
+        throw new Error('No AI provider configured. Add your API key in Settings → AI Coach.');
     }
-    if (isAuthenticated()) {
-        const last = messages[messages.length - 1];
-        const res = await post('/ai/chat', {
-            message: last?.content ?? '',
-            history: messages.slice(0, -1),
-        });
-        const reply = res?.data?.message ?? res?.data?.data?.message;
-        if (!reply) throw new Error('The server coach returned an empty reply.');
-        return reply;
-    }
-    throw new Error(
-        'No AI provider configured. Add your API key in Settings → AI Coach, or sign in to use the built-in coach.',
-    );
+    const ai = getAiConfig();
+    if (ai.provider === 'anthropic') return anthropicChat(ai, messages, systemPrompt);
+    return openAiCompatChat(ai, messages, systemPrompt);
 }
 
 /* ------------------------------------------------------------------ */

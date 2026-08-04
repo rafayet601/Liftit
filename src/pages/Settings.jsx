@@ -15,6 +15,7 @@ import {
     ShieldCheck,
 } from 'lucide-react';
 import { db } from '../data/db';
+import { backendAvailable } from '../lib/api';
 import { useSettings, useSyncStatus } from '../data/DataProvider';
 import { useAuth } from '../contexts/AuthContext';
 import { AI_PROVIDERS } from '../ai/providers';
@@ -103,10 +104,16 @@ export default function SettingsPage() {
             {/* AI provider — bring your own model */}
             <AiProviderCard settings={settings} />
 
-            {/* Account + sync */}
+            {/* Account + sync — only when this build has a backend behind it */}
             <Card className="space-y-4">
                 <SectionHead icon={ShieldCheck} title="Account & sync" />
-                {user ? (
+                {!backendAvailable() ? (
+                    <p className="text-sm text-ink-400">
+                        This build runs entirely on your device — there's no account to create and
+                        nothing leaves the browser. Use Export JSON below to back up or move your
+                        training history.
+                    </p>
+                ) : user ? (
                     <>
                         <div className="flex items-center justify-between gap-3">
                             <div>

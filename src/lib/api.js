@@ -4,9 +4,24 @@ import axios from 'axios';
  * Thin HTTP client for the optional sync/auth backend. App data never
  * blocks on this — the repository (src/data/db.js) is the source of truth
  * and sync.js drains changes in the background.
+ *
+ * The backend is opt-in: VITE_API_URL must be set for any network call to
+ * happen. When it's unset the app runs purely local-first and every
+ * account/sync affordance hides itself (see backendAvailable). This is what
+ * lets the same build ship to a static host with no server behind it —
+ * without it, a production bundle would fire at http://localhost:3001 and
+ * get blocked as mixed content.
+ *
+ * On Cloudflare Pages the API is served same-origin by Pages Functions, so
+ * the deployed value is simply "/api".
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const configured = import.meta.env.VITE_API_URL;
+
+export const API_BASE_URL = configured || (import.meta.env.DEV ? 'http://localhost:3001/api' : '');
+
+/** True when a sync/auth backend is configured for this build. */
+export const backendAvailable = () => Boolean(API_BASE_URL);
 
 const api = axios.create({
     baseURL: API_BASE_URL,
@@ -33,6 +48,9 @@ api.interceptors.response.use(
 );
 
 export const apiRequest = async (method, endpoint, data = null, options = {}) => {
+    if (!backendAvailable()) {
+        throw new Error('No sync backend is configured for this build.');
+    }
     return api.request({ method, url: endpoint, data, ...options });
 };
 
@@ -43,6 +61,7 @@ export const del = (endpoint, options = {}) => apiRequest('DELETE', endpoint, nu
 
 /** Cookie-based auth: "authenticated" means we have a cached session user. */
 export const isAuthenticated = () => {
+    if (!backendAvailable()) return false;
     try {
         return Boolean(localStorage.getItem('liftit_user'));
     } catch {

@@ -44,8 +44,50 @@ vi.mock('../../lib/api', () => {
         del: (...args) => mockApiState.delHandler(...args),
         isAuthenticated: () => mockApiState.isAuthenticated,
         getStoredUser: () => mockApiState.user,
+        // These tests exercise the signed-in/sync paths, so the mocked build
+        // must report a configured backend — otherwise auth and sync short
+        // out before the behaviour under test runs.
+        API_BASE_URL: 'http://localhost:3001/api',
+        backendAvailable: () => true,
     };
 });
+
+/**
+ * Point the Coach at a bring-your-own provider and script its reply.
+ *
+ * The coach talks straight from the browser to the user's chosen provider,
+ * so these tests stub global fetch rather than a server endpoint — there is
+ * deliberately no server-side /ai/chat, which would bill the operator's key
+ * for every message. `reply` may be a string or a (prompt) => string.
+ */
+function mockAiCoach(reply) {
+    db.settings.update({
+        ai: { provider: 'openai', apiKey: 'test-key', model: 'gpt-5.2', baseUrl: '' },
+    });
+    globalThis.fetch = vi.fn(async (_url, init) => {
+        const body = JSON.parse(init?.body ?? '{}');
+        const lastUserMessage =
+            [...(body.messages ?? [])].reverse().find((m) => m.role === 'user')?.content ?? '';
+        const text = typeof reply === 'function' ? reply(lastUserMessage) : reply;
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ choices: [{ message: { content: text } }] }),
+        };
+    });
+}
+
+/** Make the configured provider fail, to exercise the error/retry UI. */
+function mockAiCoachFailure(status = 500) {
+    db.settings.update({
+        ai: { provider: 'openai', apiKey: 'test-key', model: 'gpt-5.2', baseUrl: '' },
+    });
+    globalThis.fetch = vi.fn(async () => ({
+        ok: false,
+        status,
+        json: async () => ({ error: { message: 'upstream failure' } }),
+    }));
+}
 
 // Mock platform native shell to avoid native calls in tests
 vi.mock('../../lib/platform', () => ({
@@ -799,12 +841,11 @@ expect(greeting).toBeTruthy();
         it('T1.8.2: Motivation request matches bypass rule and returns immediate custom local quote', async () => {
             db.settings.update({ onboarded: true });
             mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = (endpoint, body) => {
-                if (endpoint === '/ai/chat' && body.message.toLowerCase().includes('motivate')) {
-                    return Promise.resolve({ data: { message: "The only bad workout is the one that didn't happen." } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            mockAiCoach((prompt) =>
+                prompt.toLowerCase().includes('motivate')
+                    ? "The only bad workout is the one that didn't happen."
+                    : '…',
+            );
 
             render(
                 <Providers initialEntries={['/']}>
@@ -826,12 +867,11 @@ expect(greeting).toBeTruthy();
         it('T1.8.3: Form advice request matches bypass and displays static technique rules', async () => {
             db.settings.update({ onboarded: true });
             mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = (endpoint, body) => {
-                if (endpoint === '/ai/chat' && body.message.toLowerCase().includes('form')) {
-                    return Promise.resolve({ data: { message: "Retract and depress scapulae. Create arch, feet firmly planted." } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            mockAiCoach((prompt) =>
+                prompt.toLowerCase().includes('form')
+                    ? 'Retract and depress scapulae. Create arch, feet firmly planted.'
+                    : '…',
+            );
 
             render(
                 <Providers initialEntries={['/']}>
@@ -853,12 +893,9 @@ expect(greeting).toBeTruthy();
         it('T1.8.4: Progress queries return local summary based on 30-day logs', async () => {
             db.settings.update({ onboarded: true });
             mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = (endpoint, body) => {
-                if (endpoint === '/ai/chat' && body.message.toLowerCase().includes('progress')) {
-                    return Promise.resolve({ data: { message: "Total workouts completed: 15" } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            mockAiCoach((prompt) =>
+                prompt.toLowerCase().includes('progress') ? 'Total workouts completed: 15' : '…',
+            );
 
             render(
                 <Providers initialEntries={['/']}>
@@ -880,12 +917,7 @@ expect(greeting).toBeTruthy();
         it('T1.8.5: Fallback general query forwards query to LLM and renders response', async () => {
             db.settings.update({ onboarded: true });
             mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = (endpoint, body) => {
-                if (endpoint === '/ai/chat') {
-                    return Promise.resolve({ data: { message: "Generic LLM Response" } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            mockAiCoach('Generic LLM Response');
 
             render(
                 <Providers initialEntries={['/']}>
@@ -1571,7 +1603,10 @@ expect(greeting).toBeTruthy();
         it('T2.8.3: LLM timeout or server error renders retry action inside chatbot bubble', async () => {
             db.settings.update({ onboarded: true });
             mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = () => Promise.reject(new Error('Timeout reaching AI server'));
+            db.settings.update({
+                ai: { provider: 'openai', apiKey: 'test-key', model: 'gpt-5.2', baseUrl: '' },
+            });
+            globalThis.fetch = vi.fn(() => Promise.reject(new Error('Timeout reaching AI server')));
 
             render(
                 <Providers initialEntries={['/']}>
@@ -1593,12 +1628,9 @@ expect(greeting).toBeTruthy();
         it('T2.8.4: Form queries with special characters are sanitized before bypass matching', async () => {
             db.settings.update({ onboarded: true });
             mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = (endpoint, body) => {
-                if (endpoint === '/ai/chat' && body.message.toLowerCase().includes('form')) {
-                    return Promise.resolve({ data: { message: "Sanitized Form Tips" } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            mockAiCoach((prompt) =>
+                prompt.toLowerCase().includes('form') ? 'Sanitized Form Tips' : '…',
+            );
 
             render(
                 <Providers initialEntries={['/']}>
@@ -1768,28 +1800,21 @@ expect(greeting).toBeTruthy();
         });
 
         it('T3.5: AI Coach program generation to active program: Asking the AI Coach to build a hypertrophy program updates the active program in Program manager', async () => {
-            db.settings.update({ onboarded: true, ai: { provider: 'none', apiKey: '' } });
-            mockApiState.isAuthenticated = true;
-            // Mock user so isAuthenticated() returns true for built-in coach path
-            mockApiState.user = { name: 'AIUser', email: 'ai@example.com' };
-            localStorage.setItem('liftit_user', JSON.stringify(mockApiState.user));
-            mockApiState.postHandler = (endpoint, body) => {
-                if (endpoint === '/ai/chat') {
-                    // Seed a program inside db simulating LLM function call / sync
-                    db.programs.save({
-                        id: 'p-ai',
-                        name: 'AI Generated Hypertrophy',
-                        goal: 'hypertrophy',
-                        daysPerWeek: 4,
-                        durationWeeks: 6,
-                        startDate: new Date().toISOString(),
-                        isActive: true,
-                        days: []
-                    });
-                    return Promise.resolve({ data: { message: "Built you a Hypertrophy program!" } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            db.settings.update({ onboarded: true });
+            mockAiCoach(() => {
+                // Seed a program inside db simulating the LLM's tool call
+                db.programs.save({
+                    id: 'p-ai',
+                    name: 'AI Generated Hypertrophy',
+                    goal: 'hypertrophy',
+                    daysPerWeek: 4,
+                    durationWeeks: 6,
+                    startDate: new Date().toISOString(),
+                    isActive: true,
+                    days: []
+                });
+                return 'Built you a Hypertrophy program!';
+            });
 
             render(
                 <Providers initialEntries={['/']}>
@@ -1876,17 +1901,14 @@ expect(greeting).toBeTruthy();
             // Go online
             Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
 
+            // Sync now addresses workouts by their client id via PUT, so the
+            // server can upsert idempotently. It no longer POSTs to /workouts
+            // or fetches /exercises to translate ids.
             let syncCalled = false;
-            mockApiState.postHandler = (endpoint) => {
-                if (endpoint === '/workouts') {
+            mockApiState.putHandler = (endpoint) => {
+                if (endpoint === '/workouts/w-sync') {
                     syncCalled = true;
-                    return Promise.resolve({ data: { id: 'srv-w-sync' } });
-                }
-                return Promise.resolve({ data: {} });
-            };
-            mockApiState.getHandler = (endpoint) => {
-                if (endpoint.includes('/exercises')) {
-                    return Promise.resolve({ data: [] });
+                    return Promise.resolve({ data: { data: { id: 'w-sync', serverId: 'srv-w-sync' } } });
                 }
                 return Promise.resolve({ data: {} });
             };
@@ -2044,18 +2066,14 @@ expect(greeting).toBeTruthy();
                 ]
             });
 
-            mockApiState.isAuthenticated = true;
-            mockApiState.postHandler = (endpoint) => {
-                if (endpoint === '/ai/chat') {
-                    // Scaling: change program days squats to 1 set or deload target weight
-                    const p = db.programs.getActive();
-                    p.days[0].exercises[0].targetSets = 1;
-                    p.days[0].exercises[0].targetRpe = 6;
-                    db.programs.save(p);
-                    return Promise.resolve({ data: { message: "Adjusted Squats to lighter sets!" } });
-                }
-                return Promise.resolve({ data: {} });
-            };
+            mockAiCoach(() => {
+                // Scaling: change program days squats to 1 set or deload target weight
+                const p = db.programs.getActive();
+                p.days[0].exercises[0].targetSets = 1;
+                p.days[0].exercises[0].targetRpe = 6;
+                db.programs.save(p);
+                return 'Adjusted Squats to lighter sets!';
+            });
 
             render(
                 <Providers initialEntries={['/']}>
@@ -2103,16 +2121,13 @@ expect(greeting).toBeTruthy();
             localStorage.setItem('liftit_user', JSON.stringify(mockApiState.user));
             Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
 
+            // Workouts sync by client id via PUT so the server can upsert.
             let syncSuccess = false;
-            mockApiState.postHandler = (endpoint) => {
-                if (endpoint === '/workouts') {
+            mockApiState.putHandler = (endpoint) => {
+                if (endpoint === '/workouts/w-offline') {
                     syncSuccess = true;
-                    return Promise.resolve({ data: { id: 'srv-w-offline' } });
+                    return Promise.resolve({ data: { data: { id: 'w-offline', serverId: 'srv-w-offline' } } });
                 }
-                return Promise.resolve({ data: {} });
-            };
-            mockApiState.getHandler = (endpoint) => {
-                if (endpoint.includes('/exercises')) return Promise.resolve({ data: [] });
                 return Promise.resolve({ data: {} });
             };
 

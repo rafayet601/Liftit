@@ -1,0 +1,13 @@
+# Cloudflare Pages — SPA fallback.
+#
+# Pages Functions (functions/api/*) match before this, so /api/* still reaches
+# the Hono app and returns JSON 404s rather than the HTML shell. Everything
+# else serves index.html so React Router can resolve the path, which is what
+# keeps deep links like /progress alive through a hard refresh.
+#
+# `wrangler pages dev` prints "Infinite loop detected in this rule and has
+# been ignored" for this line, because the destination /index.html also
+# matches /*. It is safe: locally Pages' built-in SPA handling already serves
+# the shell (verified — deep links return 200 text/html), and in production
+# this is Cloudflare's documented SPA rule.
+/*    /index.html   200

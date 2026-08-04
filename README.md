@@ -10,7 +10,7 @@ A local-first lift tracker and program builder (web + iOS via Capacitor). Track 
   - `progression.js` — double progression with RPE autoregulation, stall detection, deloads
   - `generator.js` — instant program generation (Full Body / Upper-Lower / PPL) with mesocycle phases (accumulation → intensification → realization → deload) scaling weekly targets
   - `analytics.js` — volume, muscle balance, streaks, PR timeline; all derived from real logs only (no demo blending)
-- **Bring-your-own AI Coach** (`src/ai/providers.js`) — pick Anthropic, OpenAI, Groq, or any OpenAI-compatible endpoint in Settings and paste your API key. The key never leaves your device (excluded from sync and export). Chat is grounded in your actual program and recent sessions. Falls back to the server's built-in coach when signed in.
+- **Bring-your-own AI Coach** (`src/ai/providers.js`) — pick Anthropic, OpenAI, Groq, or any OpenAI-compatible endpoint in Settings and paste your API key. The key never leaves your device (excluded from sync and export) and requests go straight from your browser to the provider, never through Liftit's backend. Chat is grounded in your actual program and recent sessions.
 - **Forge design system** — carbon base, ember-orange accent, Space Grotesk numerals, hairline surfaces. Tokens in `src/index.css` + `tailwind.config.js`.
 - **Rebuilt screens** — Home · Workout · History · Program · Progress:
   - Workout: program day or freestyle, exercise picker with search/filters + custom exercises, previous-session ghost values, rest timer with haptics, mid-session swap/add/remove, finish summary with PRs
@@ -23,8 +23,31 @@ A local-first lift tracker and program builder (web + iOS via Capacitor). Track 
 ## Stack
 
 - **Frontend**: React 18 + Vite, Tailwind, Recharts, Capacitor (iOS), PWA
-- **Backend (optional, for sync + OAuth + built-in coach)**: Express + TypeScript, Prisma, MySQL, Anthropic API
-- **Tests**: Vitest + Testing Library (`npm test`) — engine, repository (incl. v1→v2 migration), and screen smoke tests
+- **Backend (optional, for accounts + sync)**: Cloudflare Pages Functions (Hono) + D1, same origin as the app
+- **Tests**: Vitest + Testing Library (`npm test`) — 130 tests across engine, repository (incl. v1→v2 migration), screens, and end-to-end flows
+
+The `server/` directory holds the previous Express/Prisma/MySQL backend. It is
+no longer part of the deployed stack — see [DEPLOY.md](DEPLOY.md).
+
+## Deploying
+
+Cloudflare Pages + Functions + D1, entirely within the free tier — **$0/month**.
+Full walkthrough in **[DEPLOY.md](DEPLOY.md)**.
+
+```bash
+npm run cf:db:create     # create the D1 database
+npm run cf:db:migrate    # apply schema.sql
+npm run cf:deploy        # build + deploy
+```
+
+The backend is opt-in: leave `VITE_API_URL` unset and the app ships as a purely
+local-first static site with the account UI hidden. Set it to `/api` to enable
+accounts and cross-device sync.
+
+> **Local tests need an ASCII path.** Vitest cannot start its workers when the
+> checkout path contains a curly apostrophe (`’`), which the current folder name
+> does; runs die after a 10-minute timeout having collected zero tests. Clone to
+> a path without it to run tests locally. CI is unaffected.
 
 ## Project structure
 
