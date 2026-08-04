@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Dumbbell, ArrowLeft, Github, Sparkles, ShieldCheck, HardDrive } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { get, backendAvailable } from '../../lib/api';
 import { db } from '../../data/db';
 import { useSettings } from '../../data/DataProvider';
 import WaveDistortion from '../ui/WaveDistortion';
@@ -12,12 +13,43 @@ import Glass from '../ui/Glass';
  * Sign-in is optional in Liftit v4 — the app is local-first. This page is
  * the gateway to cloud sync, plus an explicit demo-data path.
  */
+
+const PROVIDER_BUTTONS = {
+    google: { label: 'Continue with Google', Icon: ShieldCheck },
+    github: { label: 'Continue with GitHub', Icon: Github },
+};
+
 export default function LoginPage() {
     const { loginWithOAuth } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const settings = useSettings();
     const redirectTo = location.state?.from || '/';
+
+    // Only render buttons for providers the deployment actually has OAuth
+    // credentials for. Start optimistic (both) and refine from the API; on
+    // fetch failure keep the defaults — each button surfaces its own error
+    // via /auth/callback if it truly isn't configured.
+    const [providers, setProviders] = useState(() =>
+        backendAvailable() ? Object.keys(PROVIDER_BUTTONS) : [],
+    );
+    useEffect(() => {
+        if (!backendAvailable()) return undefined;
+        let cancelled = false;
+        get('/auth/providers')
+            .then((res) => {
+                const list = res?.data?.providers;
+                if (!cancelled && Array.isArray(list)) {
+                    setProviders(list.filter((p) => PROVIDER_BUTTONS[p]));
+                }
+            })
+            .catch(() => {
+                /* keep optimistic defaults */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const tryDemo = () => {
         db.seedDemo();
@@ -90,22 +122,28 @@ export default function LoginPage() {
                     local workouts come with you.
                 </p>
 
-                <div className="mt-8 space-y-2.5">
-                    <button
-                        type="button"
-                        onClick={() => loginWithOAuth('google')}
-                        className="btn-secondary btn-lg w-full bg-white/[0.04] hover:bg-white/[0.08] hover:scale-[1.01] hover:border-white/20 transition-all border border-white/10"
-                    >
-                        <ShieldCheck className="h-5 w-5" /> Continue with Google
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => loginWithOAuth('github')}
-                        className="btn-secondary btn-lg w-full bg-white/[0.04] hover:bg-white/[0.08] hover:scale-[1.01] hover:border-white/20 transition-all border border-white/10"
-                    >
-                        <Github className="h-5 w-5" /> Continue with GitHub
-                    </button>
-                </div>
+                {providers.length > 0 ? (
+                    <div className="mt-8 space-y-2.5">
+                        {providers.map((name) => {
+                            const { label, Icon } = PROVIDER_BUTTONS[name];
+                            return (
+                                <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => loginWithOAuth(name)}
+                                    className="btn-secondary btn-lg w-full bg-white/[0.04] hover:bg-white/[0.08] hover:scale-[1.01] hover:border-white/20 transition-all border border-white/10"
+                                >
+                                    <Icon className="h-5 w-5" /> {label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <p className="mt-8 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-ink-400">
+                        Cloud sync isn't enabled on this deployment — your training data lives on
+                        this device. You can back it up anytime with Export in Settings.
+                    </p>
+                )}
 
                 <LinearGradient preset="purpleToSteel" variant="strip" className="my-6" style={{ opacity: 0.3 }} />
 

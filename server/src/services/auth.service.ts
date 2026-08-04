@@ -61,10 +61,15 @@ export const authService = {
 
   async validateSession(token: string) {
     try {
-      const decoded = jwt.verify(token, config.jwtSecret as Secret) as { userId: string; email: string };
+      const decoded = jwt.verify(token, config.jwtSecret as Secret) as { userId: string; email: string; iat: number };
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId },
       });
+      if (!user) return null;
+      if (user.tokensInvalidatedAt) {
+        const tokenIssuedAt = new Date(decoded.iat * 1000);
+        if (tokenIssuedAt <= user.tokensInvalidatedAt) return null;
+      }
       return user;
     } catch {
       return null;
@@ -72,10 +77,21 @@ export const authService = {
   },
 
   async deleteSession(token: string) {
-    // JWT is stateless, cleanup handled client-side
+    try {
+      const decoded = jwt.verify(token, config.jwtSecret as Secret) as { userId: string; email: string };
+      await prisma.user.update({
+        where: { id: decoded.userId },
+        data: { tokensInvalidatedAt: new Date() },
+      });
+    } catch {
+      // Token already expired or invalid — nothing to revoke
+    }
   },
 
   async deleteAllUserSessions(userId: string) {
-    // JWT is stateless, cleanup handled client-side
+    await prisma.user.update({
+      where: { id: userId },
+      data: { tokensInvalidatedAt: new Date() },
+    });
   },
 };

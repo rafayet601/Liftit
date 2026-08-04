@@ -326,7 +326,7 @@ export function ProgressBar({ value = 0, className, tone = 'accent' }) {
             aria-valuemax={100}
         >
             <div
-                className={clsx('h-full rounded-full transition-[width] duration-500', toneCls)}
+                className={clsx('h-full rounded-full transition-[width] duration-300', toneCls)}
                 style={{ width: `${safe}%` }}
             />
         </div>

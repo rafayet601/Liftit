@@ -1,8 +1,9 @@
-import { post, get } from '../lib/api';
+import { post, get, API_BASE_URL, backendAvailable } from '../lib/api';
 
 /**
  * Optional cookie-based OAuth against the sync backend. The app never
- * requires this — it only unlocks cross-device sync.
+ * requires this — it only unlocks cross-device sync. Every entry point is a
+ * no-op when no backend is configured (see lib/api.js).
  */
 
 const AUTH_ENDPOINTS = {
@@ -12,13 +13,16 @@ const AUTH_ENDPOINTS = {
     github: '/auth/github',
 };
 
+export { backendAvailable };
+
 export const loginWithOAuth = (provider) => {
-    window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}${AUTH_ENDPOINTS[provider]}`;
+    if (!backendAvailable()) return;
+    window.location.href = `${API_BASE_URL}${AUTH_ENDPOINTS[provider]}`;
 };
 
 export const logout = async () => {
     try {
-        await post(AUTH_ENDPOINTS.logout);
+        if (backendAvailable()) await post(AUTH_ENDPOINTS.logout);
     } finally {
         try {
             localStorage.removeItem('liftit_user');
@@ -30,10 +34,14 @@ export const logout = async () => {
 
 export const getSession = async () => {
     const response = await get(AUTH_ENDPOINTS.session);
-    if (response.data?.user) {
-        localStorage.setItem('liftit_user', JSON.stringify(response.data.user));
+    // The API returns { user: {...} }. Tolerate a bare user object too, so a
+    // server responding with the older flat shape still signs people in
+    // rather than silently dropping the session.
+    const user = response.data?.user ?? (response.data?.id ? response.data : null);
+    if (user) {
+        localStorage.setItem('liftit_user', JSON.stringify(user));
     }
-    return response;
+    return { ...response, data: { ...response.data, user } };
 };
 
 export const getStoredUser = () => {

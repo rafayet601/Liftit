@@ -132,7 +132,7 @@ export default function TrainerChat({ onClose }) {
                             <p className="mx-auto mt-2 max-w-sm text-sm text-ink-400">
                                 Coach uses an AI provider of your choice — Anthropic, OpenAI, Groq, or any
                                 OpenAI-compatible endpoint. Add your API key once and it stays on this
-                                device. Or sign in to use the built-in coach.
+                                device — it's never sent to us.
                             </p>
                         </div>
                         <Link to="/settings" onClick={onClose} className="btn-primary">

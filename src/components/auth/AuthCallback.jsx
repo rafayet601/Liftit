@@ -8,6 +8,18 @@ import { LoadingRing } from '../ui/Primitives';
  * OAuth callback landing — verifies token, surfaces failures gracefully,
  * and soft-navigates to the destination on success.
  */
+
+// The API redirects failures here as /auth/callback?error=<slug>.
+const ERROR_MESSAGES = {
+    oauth_failed: 'The provider cancelled or rejected the sign-in.',
+    state_mismatch: 'That sign-in link expired or was already used — please try again.',
+    token_exchange_failed: 'The provider did not accept the sign-in. Please try again.',
+    no_email: 'Your account has no verified email address we can use to identify you.',
+    provider_not_configured: 'This sign-in method is not enabled on this deployment.',
+    server_error: 'Something went wrong on our side — please try again.',
+    auth_failed: 'Sign-in failed — please try again.',
+};
+
 export default function AuthCallback() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -28,7 +40,7 @@ export default function AuthCallback() {
         const errParam = searchParams.get('error');
 
         if (errParam) {
-            setError(errParam);
+            setError(ERROR_MESSAGES[errParam] ?? errParam);
             return;
         }
 

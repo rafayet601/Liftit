@@ -4,6 +4,7 @@ import {
     logout as oauthLogout,
     getSession,
     getStoredUser,
+    backendAvailable,
 } from '../services/auth.service';
 
 /**
@@ -29,8 +30,9 @@ export function AuthProvider({ children }) {
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        // Validate the cached session in the background (only if one exists).
-        if (!getStoredUser()) return undefined;
+        // Validate the cached session in the background (only if one exists
+        // and this build actually has a backend to validate against).
+        if (!backendAvailable() || !getStoredUser()) return undefined;
         let cancelled = false;
         getSession()
             .then((res) => {

@@ -1,0 +1,23 @@
+# Cloudflare Pages — static build + /api/* Pages Function on one origin.
+#
+# Secrets are NOT set here. Add them in the Pages dashboard under
+# Settings → Environment variables (encrypted), or with:
+#   npx wrangler pages secret put JWT_SECRET
+#
+#   JWT_SECRET             required — 64 random chars
+#   GOOGLE_CLIENT_ID       optional — omit to hide Google sign-in
+#   GOOGLE_CLIENT_SECRET
+#   GITHUB_CLIENT_ID       optional — omit to hide GitHub sign-in
+#   GITHUB_CLIENT_SECRET
+#   APP_URL                optional — pin the OAuth redirect origin; defaults
+#                          to the request origin, which is what you want on
+#                          preview deployments
+
+name = "liftit"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-01-15"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "liftit"
+database_id = "17518621-e292-4aa7-888a-c15f4f38ad90"

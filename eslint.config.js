@@ -15,6 +15,8 @@ export default [
             'android/**',
             'coverage',
             'public/**',
+            // wrangler bundles the Pages Function into here on every dev run
+            '.wrangler/**',
             '*.config.js',
             '*.config.cjs',
         ],

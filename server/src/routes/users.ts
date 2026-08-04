@@ -142,24 +142,33 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
       }
     }
 
-    const setsThisWeek = await prisma.workoutSet.count({
+    const weeklySets = await prisma.workoutSet.findMany({
       where: {
         workoutLog: { userId, startedAt: { gte: startOfWeek } },
       },
+      select: { reps: true, weight: true },
     });
+
+    const weeklyVolume = weeklySets.reduce((sum, s) => {
+      return sum + (s.reps ?? 0) * (s.weight ?? 0);
+    }, 0);
 
     const activeProgram = await prisma.program.findFirst({
       where: { userId, isActive: true },
       include: { mesocycle: true },
     });
 
+    const weeklyTargetVolume = activeProgram
+      ? weeklyVolume * 1.05
+      : Math.max(weeklyVolume * 1.05, 5000);
+
     res.json({
       totalWorkouts,
       workoutsThisWeek,
       workoutsThisMonth,
       trainingStreak,
-      weeklyVolume: setsThisWeek * 10,
-      weeklyTargetVolume: 60000,
+      weeklyVolume,
+      weeklyTargetVolume: Math.round(weeklyTargetVolume),
       activeProgram: activeProgram ? {
         id: activeProgram.id,
         name: activeProgram.name,

@@ -1,6 +1,7 @@
 import { claudeService, mcpTools } from './claude.service.js';
 import { generateSystemPrompt, formCueLibrary } from '../prompts/system-prompt.js';
 import { mcpService } from '../../mcp/services/mcp.service.js';
+import { prisma } from '../../../prisma/lib.js';
 import {
   AIResponse,
   Message,
@@ -88,8 +89,9 @@ export class ChatService {
     const exerciseMatch = this.extractExerciseName(message);
     
     if (exerciseMatch) {
-      const formTips = this.getFormTipsForExercise(exerciseMatch);
-      const exerciseInfo = this.getExerciseBasicInfo(exerciseMatch);
+      const exercise = await this.findExerciseInDb(exerciseMatch);
+      const formTips = exercise?.instructions || this.getFallbackFormTips(exerciseMatch);
+      const exerciseInfo = exercise?.description || null;
       
       return {
         message: `**${exerciseMatch} Form Tips:**\n\n${formTips}\n\n${
@@ -101,6 +103,7 @@ export class ChatService {
         metadata: {
           exerciseName: exerciseMatch,
           category: 'form',
+          sourcedFromDb: !!exercise,
         },
       };
     }
@@ -110,6 +113,30 @@ export class ChatService {
       type: 'tip',
       metadata: { category: 'form', needsClarification: true },
     };
+  }
+
+  private async findExerciseInDb(exerciseName: string): Promise<{ description: string | null; instructions: string | null } | null> {
+    const normalized = exerciseName.toLowerCase().trim();
+    const exercise = await prisma.exercise.findFirst({
+      where: {
+        OR: [
+          { name: { equals: normalized } },
+          { name: { startsWith: normalized } },
+          { slug: normalized.replace(/\s+/g, '-') },
+        ],
+      },
+      select: { description: true, instructions: true },
+    });
+    return exercise || null;
+  }
+
+  private getFallbackFormTips(exerciseName: string): string {
+    return `General tips for ${exerciseName}:
+• Focus on controlled movement throughout the full range of motion
+• Maintain proper breathing — exhale on exertion, inhale on the eccentric
+• Use appropriate weight that allows you to maintain form
+• Stop if you feel sharp pain (not muscle discomfort)
+• Warm up with lighter weights before your working sets`;
   }
 
   private extractExerciseName(message: string): string | null {
@@ -128,59 +155,6 @@ export class ChatService {
     }
 
     return null;
-  }
-
-  private getExerciseBasicInfo(exerciseName: string): string | null {
-    const descriptions: Record<string, string> = {
-      'barbell back squat': 'A compound lower body exercise targeting quads, glutes, and hamstrings.',
-      'bench press': 'A compound upper body push exercise targeting chest, shoulders, and triceps.',
-      'conventional deadlift': 'A compound full body exercise targeting posterior chain.',
-      'overhead press': 'A compound shoulder exercise targeting deltoids and triceps.',
-      'barbell row': 'A compound back exercise targeting lats, rhomboids, and biceps.',
-    };
-    return descriptions[exerciseName.toLowerCase()] || null;
-  }
-
-  private getFormTipsForExercise(exerciseName: string): string {
-    const formTips: Record<string, string> = {
-      'barbell back squat': `• Set up with bar on upper traps, hands宽
-• Feet shoulder-width, toes slightly out
-• Brace core, break at hips AND knees simultaneously
-• Descend until hip crease below knee
-• Drive through heels to stand
-• Keep chest up throughout`,
-      
-      'bench press': `• Retract and depress scapulae
-• Create arch, feet firmly planted
-• Grip slightly wider than shoulder-width
-• Touch chest with bar, control the descent
-• Press path in slight arc toward hips
-• Lock out fully at top`,
-      
-      'conventional deadlift': `• Stance hip-width, toes under bar
-• Grip outside knees, arms vertical
-• Brace core, push floor away
-• Keep bar close to body throughout
-• Hinge at hips, not squat
-• Lock out by squeezing glutes`,
-      
-      'overhead press': `• Clean bar to shoulders
-• Grip slightly outside shoulder-width
-• Brace core hard
-• Press in arc pattern (not straight back)
-• Look slightly up to clear chin
-• Lock out overhead, ears in front of arms`,
-      
-      'barbell row': `• Hinge forward ~45 degrees
-• Pull to lower chest/upper abdomen
-• Squeeze shoulder blades together at top
-• Control the descent
-• Keep core tight throughout`,
-    };
-
-    const normalizedName = exerciseName.toLowerCase();
-    return formTips[normalizedName] || 
-           `General tips for ${exerciseName}:\n• Focus on controlled movement\n• Maintain proper breathing\n• Use appropriate weight\n• Stop if you feel pain (not discomfort)`;
   }
 
   private async handleMotivationRequest(context: ChatContext): Promise<AIResponse> {

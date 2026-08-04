@@ -10,17 +10,25 @@
 
 import { Preferences } from '@capacitor/preferences';
 
-// Detect if running on native (iOS/Android) vs web
+let _isNative = null;
+
 const IS_NATIVE = () => {
+    if (_isNative !== null) return _isNative;
     try {
-        // In a real native app, Capacitor is injected via the native layer
-        // In test/web, window.Capacitor may exist but localStorage is available
-        // Check: if localStorage is available, we're in a web/test environment
-        if (typeof window === 'undefined') return false;
-        if (typeof window.Capacitor === 'undefined') return false;
-        if (typeof localStorage !== 'undefined') return false;
-        return true;
+        if (typeof window === 'undefined') {
+            _isNative = false;
+            return false;
+        }
+        const Cap = window.Capacitor;
+        if (!Cap || !Cap.getPlatform) {
+            _isNative = false;
+            return false;
+        }
+        const platform = Cap.getPlatform();
+        _isNative = platform === 'ios' || platform === 'android';
+        return _isNative;
     } catch {
+        _isNative = false;
         return false;
     }
 };

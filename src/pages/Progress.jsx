@@ -369,26 +369,119 @@ export default function Progress() {
                     <h2 className="font-display text-lg font-bold text-white">Consistency</h2>
                     <Chip>Last 12 weeks</Chip>
                 </div>
-                <div className="no-scrollbar -mx-2 grid max-h-32 grid-cols-14 gap-1 overflow-x-auto px-2">
-                    {Array.from({ length: 84 }, (_, i) => {
-                        const d = new Date();
-                        d.setDate(d.getDate() - (83 - i));
+                {(() => {
+                    const DAY = 86400000;
+                    const CELL = '0.85rem';
+                    const LEVELS = [
+                        'rgba(255,255,255,0.05)',
+                        'rgba(139,92,246,0.32)',
+                        'rgba(139,92,246,0.55)',
+                        'rgba(139,92,246,0.80)',
+                        'rgba(139,92,246,1)',
+                    ];
+                    const levelOf = (c) =>
+                        c <= 0 ? 0 : c === 1 ? 1 : c === 2 ? 2 : c === 3 ? 3 : 4;
+
+                    // GitHub-style: weekday rows (Sun→Sat), week columns. Start on
+                    // the Sunday on/before the 12-week window so weekdays align.
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const start = new Date(today.getTime() - 83 * DAY);
+                    start.setDate(start.getDate() - start.getDay());
+
+                    const cells = [];
+                    for (let t = start.getTime(); t <= today.getTime(); t += DAY) {
+                        const d = new Date(t);
                         const key = d.toISOString().slice(0, 10);
-                        const count = heatmap[key] ?? 0;
-                        const opacity = count === 0 ? 0.15 : count === 1 ? 0.4 : count === 2 ? 0.65 : 1;
-                        return (
-                            <div
-                                key={key}
-                                className="aspect-square rounded-sm"
-                                style={{
-                                    background: 'rgba(139,92,246,' + opacity + ')',
-                                    borderRadius: '3px',
-                                }}
-                                title={`${key}: ${count} workout${count !== 1 ? 's' : ''}`}
-                            />
-                        );
-                    })}
-                </div>
+                        cells.push({ key, date: d, count: heatmap[key] ?? 0 });
+                    }
+                    const weeks = Math.ceil(cells.length / 7);
+
+                    // One label per week column; print the month name when it changes.
+                    let lastMonth = -1;
+                    const monthLabels = Array.from({ length: weeks }, (_, w) => {
+                        const first = cells[w * 7]?.date;
+                        if (!first) return '';
+                        const m = first.getMonth();
+                        if (m !== lastMonth) {
+                            lastMonth = m;
+                            return first.toLocaleString('en-US', { month: 'short' });
+                        }
+                        return '';
+                    });
+
+                    return (
+                        <div className="space-y-3">
+                            <div className="flex gap-2">
+                                <div
+                                    className="grid shrink-0 pt-[1.15rem]"
+                                    style={{ gridTemplateRows: `repeat(7, ${CELL})`, gap: '3px' }}
+                                >
+                                    {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((l, i) => (
+                                        <span
+                                            key={i}
+                                            className="text-[9px] font-medium leading-[0.85rem] text-ink-500"
+                                        >
+                                            {l}
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="no-scrollbar overflow-x-auto">
+                                    <div
+                                        className="grid"
+                                        style={{
+                                            gridTemplateColumns: `repeat(${weeks}, ${CELL})`,
+                                            gap: '3px',
+                                            marginBottom: '0.25rem',
+                                        }}
+                                    >
+                                        {monthLabels.map((m, i) => (
+                                            <span
+                                                key={i}
+                                                className="whitespace-nowrap text-[9px] font-medium text-ink-500"
+                                            >
+                                                {m}
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div
+                                        className="grid"
+                                        style={{
+                                            gridTemplateRows: `repeat(7, ${CELL})`,
+                                            gridAutoFlow: 'column',
+                                            gridAutoColumns: CELL,
+                                            gap: '3px',
+                                        }}
+                                    >
+                                        {cells.map((c) => (
+                                            <div
+                                                key={c.key}
+                                                title={`${c.key}: ${c.count} workout${c.count !== 1 ? 's' : ''}`}
+                                                style={{
+                                                    width: CELL,
+                                                    height: CELL,
+                                                    borderRadius: '3px',
+                                                    background: LEVELS[levelOf(c.count)],
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-end gap-1.5 text-[10px] text-ink-500">
+                                <span>Less</span>
+                                {LEVELS.map((bg, i) => (
+                                    <span
+                                        key={i}
+                                        className="inline-block"
+                                        style={{ width: '0.7rem', height: '0.7rem', borderRadius: '2px', background: bg }}
+                                    />
+                                ))}
+                                <span>More</span>
+                            </div>
+                        </div>
+                    );
+                })()}
             </Card>
         </div>
     );

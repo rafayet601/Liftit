@@ -1,0 +1,40 @@
+# Quality gate. Deployment is handled by Cloudflare Pages' own Git
+# integration, so this workflow deliberately holds no cloud credentials.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify service worker was emitted
+        # vite-plugin-pwa silently produced no service worker when its peer
+        # range didn't cover the installed Vite, and the build still exited 0.
+        # Offline support is the product's headline promise, so assert it.
+        run: |
+          test -f dist/sw.js || { echo "::error::dist/sw.js missing — PWA build is broken"; exit 1; }
+          test -f dist/index.html
+          echo "service worker present: $(wc -c < dist/sw.js) bytes"

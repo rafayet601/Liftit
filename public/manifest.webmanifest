@@ -1,20 +1,20 @@
 {
-    "name": "Liftit — AI Strength Tracker",
+    "name": "Liftit — Lift Tracker & Program Builder",
     "short_name": "Liftit",
-    "description": "AI-powered progressive overload tracker for serious lifters.",
+    "description": "Local-first lift tracker with transparent rule-based progression and instant periodized program generation.",
     "start_url": "/",
     "scope": "/",
     "display": "standalone",
     "orientation": "portrait",
-    "background_color": "#09090b",
-    "theme_color": "#09090b",
+    "background_color": "#0b0b0c",
+    "theme_color": "#0b0b0c",
     "categories": ["fitness", "health", "lifestyle"],
     "icons": [
         {
             "src": "/icon.svg",
             "sizes": "any",
             "type": "image/svg+xml",
-            "purpose": "any maskable"
+            "purpose": "any"
         },
         {
             "src": "/icon-192.png",
