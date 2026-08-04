@@ -26,7 +26,7 @@ import { useToast } from '../components/ui/Toast';
 export default function SettingsPage() {
     const settings = useSettings();
     const { user, logout } = useAuth();
-    const { isOnline, isSyncing, pendingOps, requestSync } = useSyncStatus();
+    const { isOnline, isSyncing, pendingOps, syncError, requestSync } = useSyncStatus();
     const { showToast } = useToast();
     const fileRef = useRef(null);
     const [confirmWipe, setConfirmWipe] = useState(false);
@@ -138,6 +138,17 @@ export default function SettingsPage() {
                                 <LogOut className="h-4 w-4" /> Sign out
                             </button>
                         </div>
+                        {syncError && (
+                            <p className="text-sm text-red-400">
+                                {syncError.stage === 'auth'
+                                    ? "Sync stopped because your session expired — sign in again to pick it up."
+                                    : `Last sync didn't finish (${syncError.message}).`}{' '}
+                                <span className="text-ink-400">
+                                    Everything you've logged is safe on this device, and we'll try
+                                    again.
+                                </span>
+                            </p>
+                        )}
                     </>
                 ) : (
                     <>
