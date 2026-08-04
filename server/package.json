@@ -17,15 +17,15 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "express-validator": "^7.2.0",
-    "groq-sdk": "^1.1.1",
+    "express-validator": "^7.3.2",
+    "groq-sdk": "^1.5.0",
     "jsonwebtoken": "^9.0.2",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
@@ -44,7 +44,7 @@
     "@types/passport-google-oauth20": "^2.0.16",
     "@types/uuid": "^10.0.0",
     "prisma": "^5.22.0",
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.0"
   }
 }
