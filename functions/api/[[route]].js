@@ -266,18 +266,48 @@ app.get('/auth/:provider/callback', async (c) => {
         if (!profile.email) return fail('no_email');
 
         const now = Date.now();
-        const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
-            .bind(profile.email)
+        // Stable identity first: the provider id survives email changes, so a
+        // returning user keeps their account (and workouts) even after
+        // switching primary email at Google/GitHub. Fall back to email so a
+        // first sign-in via a second provider links to the same account
+        // rather than forking a new one.
+        let existing = await c.env.DB.prepare(
+            'SELECT id FROM users WHERE provider = ? AND provider_id = ?',
+        )
+            .bind(name, profile.providerId)
             .first();
+        if (!existing) {
+            existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
+                .bind(profile.email)
+                .first();
+        }
 
         let userId;
         if (existing) {
             userId = existing.id;
-            await c.env.DB.prepare(
-                'UPDATE users SET name = ?, image = ?, provider = ?, provider_id = ?, updated_at = ? WHERE id = ?',
-            )
-                .bind(profile.name ?? null, profile.image ?? null, name, profile.providerId, now, userId)
-                .run();
+            try {
+                await c.env.DB.prepare(
+                    'UPDATE users SET email = ?, name = ?, image = ?, provider = ?, provider_id = ?, updated_at = ? WHERE id = ?',
+                )
+                    .bind(
+                        profile.email,
+                        profile.name ?? null,
+                        profile.image ?? null,
+                        name,
+                        profile.providerId,
+                        now,
+                        userId,
+                    )
+                    .run();
+            } catch {
+                // The new email may collide with another row (UNIQUE). Keep
+                // the stored email rather than failing the whole sign-in.
+                await c.env.DB.prepare(
+                    'UPDATE users SET name = ?, image = ?, provider = ?, provider_id = ?, updated_at = ? WHERE id = ?',
+                )
+                    .bind(profile.name ?? null, profile.image ?? null, name, profile.providerId, now, userId)
+                    .run();
+            }
         } else {
             userId = uid();
             await c.env.DB.prepare(
