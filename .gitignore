@@ -24,3 +24,7 @@ Thumbs.db
 # Cloudflare local secrets
 .dev.vars
 .wrangler
+
+# macOS/iCloud duplicate artifacts ("file 2.ext") — this repo lives in an
+# iCloud-synced Documents folder, which mints these on sync conflicts.
+*[[:space:]]2.*

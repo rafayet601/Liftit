@@ -1,0 +1,85 @@
+# Dependabot configuration.
+#
+# There was no config file before this, so Dependabot ran on bare defaults:
+# one PR per advisory, ungrouped, unlimited. That produced ~22 simultaneous
+# open PRs, a dozen of them for a /LiftitV3 directory and next/next-auth
+# packages that no longer exist in this repo.
+#
+# Only two manifests are real: / (the app) and /server (the retired Express
+# backend, kept for reference but not deployed — see DEPLOY.md).
+
+version: 2
+updates:
+  # ── The app ────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels:
+      - dependencies
+    ignore:
+      # react-router: pinned to v6 on purpose, and NOT because upgrading is
+      # inconvenient — as of now no published version is advisory-free:
+      #   v6.x            2 moderate (open redirect, deserializeErrors SSR)
+      #   7.12.0-8.2.0    1 HIGH (RSC-mode CSRF bypass) — includes latest 7.18.2
+      #   7.11.0          still inside the 6.0.0-7.17.0 moderate range
+      # The RSC fix is slated for 8.3.0, which is unreleased. Both v6
+      # advisories are inapplicable here: every `to=` is a hardcoded route
+      # literal (no attacker-controlled navigation target) and this is a pure
+      # client SPA with no SSR/RSC. Moving to v7 would trade two inapplicable
+      # moderates for an inapplicable HIGH plus a breaking major migration.
+      # Revisit when 8.3.0 ships.
+      - dependency-name: react-router
+        update-types: [version-update:semver-major]
+      - dependency-name: react-router-dom
+        update-types: [version-update:semver-major]
+    groups:
+      # One PR for all routine dev-tooling bumps (vite, eslint, vitest…).
+      # These never reach users, so batching them is pure signal gain.
+      dev-tooling:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      # Runtime patch/minor together; majors still arrive individually so
+      # breaking changes get reviewed on their own.
+      runtime-minor:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+
+  # ── Retired Express backend ────────────────────────────────────────
+  # Not deployed, so these are low priority. Grouped hard into a single PR
+  # to keep it from dominating the queue; security fixes still come through.
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - server
+    groups:
+      server-all:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ── CI actions ─────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels:
+      - ci
+    groups:
+      actions:
+        patterns:
+          - "*"
