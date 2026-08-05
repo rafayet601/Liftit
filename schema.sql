@@ -55,3 +55,23 @@ CREATE TABLE IF NOT EXISTS workout_sets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sets_workout ON workout_sets (workout_id);
+
+-- Entitlements — the substrate for Liftit Pro. One row per paying or
+-- grandfathered user; no row means the free plan. Dormant by design: the API
+-- treats every account as Pro until the BILLING_ENFORCED env var is "true"
+-- (see wrangler.toml), so applying this migration changes nothing for beta.
+--
+-- expires_at NULL = never lapses (lifetime purchases, beta grandfathers).
+-- source: 'beta-grandfather' | 'stripe' | 'apple' | 'google' | 'comp'.
+CREATE TABLE IF NOT EXISTS entitlements (
+    user_id    TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    plan       TEXT NOT NULL DEFAULT 'free',
+    source     TEXT NOT NULL DEFAULT 'none',
+    expires_at INTEGER,
+    -- Stripe linkage: lets the API open the customer portal and reuse the
+    -- customer on repeat checkouts. NULL for non-Stripe entitlements.
+    stripe_customer_id     TEXT,
+    stripe_subscription_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);

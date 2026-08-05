@@ -16,6 +16,7 @@
     "cf:db:create": "wrangler d1 create liftit",
     "cf:db:migrate": "wrangler d1 execute liftit --remote --file=./schema.sql",
     "cf:db:migrate:local": "wrangler d1 execute liftit --local --file=./schema.sql",
+    "cf:db:grandfather": "wrangler d1 execute liftit --remote --file=./migrations/grandfather-beta.sql",
     "cf:tail": "wrangler pages deployment tail",
     "server": "cd server && npm run dev",
     "server:build": "cd server && npm run build",
@@ -52,10 +53,10 @@
     "clsx": "^2.1.1",
     "hono": "^4.13.0",
     "lucide-react": "^0.561.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-router-dom": "^6.30.4",
-    "recharts": "^2.12.0"
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.0",
