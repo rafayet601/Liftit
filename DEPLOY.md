@@ -79,25 +79,47 @@ that goes live, and redeploy after changing it.
 
 ### 5. Register the OAuth apps
 
-Only for the providers you want. Omit a provider's variables and its button
-disappears rather than breaking.
+Do this for whichever providers you want — omit a provider's variables and its
+button disappears rather than breaking. Only the app owner can register these:
+it means signing in to Google/GitHub and accepting their terms. The callback
+URLs below are this deployment's real ones, ready to paste.
 
 **Google** — [console.cloud.google.com](https://console.cloud.google.com) →
 APIs & Services → Credentials → OAuth client ID → Web application.
+You must also fill in the OAuth consent screen first (External, app name,
+support email); leave it in Testing until you're ready and add your beta
+testers under Test users, or Publish to let anyone sign in.
 Authorised redirect URI:
 
 ```
-https://<your-domain>/api/auth/google/callback
+https://liftit-4mq.pages.dev/api/auth/google/callback
 ```
 
 **GitHub** — Settings → Developer settings → OAuth Apps → New.
-Authorisation callback URL:
+Homepage URL `https://liftit-4mq.pages.dev`, authorisation callback URL:
 
 ```
-https://<your-domain>/api/auth/github/callback
+https://liftit-4mq.pages.dev/api/auth/github/callback
 ```
 
-Add your `*.pages.dev` URL too if you want sign-in on preview deployments.
+Then store the credentials as encrypted Pages secrets and redeploy — they are
+never committed:
+
+```bash
+npx wrangler pages secret put GOOGLE_CLIENT_ID
+npx wrangler pages secret put GOOGLE_CLIENT_SECRET
+npx wrangler pages secret put GITHUB_CLIENT_ID
+npx wrangler pages secret put GITHUB_CLIENT_SECRET
+npm run cf:deploy
+```
+
+Verify with `curl https://liftit-4mq.pages.dev/api/auth/providers` — it lists
+exactly the providers whose credentials are set, and the login page renders
+one button per entry. An empty list means no sign-in is possible.
+
+The redirect URI is derived from the request origin, so a custom domain (or
+signing in on a preview deployment) needs its own URI registered too. Pin
+`APP_URL` only if you want every callback forced to one origin.
 
 ### 6. Deploy and verify
 
@@ -108,9 +130,9 @@ npm run cf:deploy      # or just push, if Git integration is connected
 Then check:
 
 ```bash
-curl https://<your-domain>/api/health          # {"status":"ok",...}
-curl -i https://<your-domain>/api/workouts     # 401 — auth is enforced
-curl -o /dev/null -w '%{http_code}\n' https://<your-domain>/progress   # 200 — deep links work
+curl https://liftit-4mq.pages.dev/api/health          # {"status":"ok",...}
+curl -i https://liftit-4mq.pages.dev/api/workouts     # 401 — auth is enforced
+curl -o /dev/null -w '%{http_code}\n' https://liftit-4mq.pages.dev/progress   # 200 — deep links work
 ```
 
 Sign in, log a set, open the app on a second device, and confirm the workout
