@@ -12,6 +12,12 @@
 #   APP_URL                optional — pin the OAuth redirect origin; defaults
 #                          to the request origin, which is what you want on
 #                          preview deployments
+#   STRIPE_SECRET_KEY      optional — enables web checkout + portal (sk_…)
+#   STRIPE_WEBHOOK_SECRET  optional — verifies /api/billing/webhook (whsec_…)
+#   REVENUECAT_WEBHOOK_AUTH optional — Authorization header value that
+#                          /api/billing/revenuecat requires (native IAP)
+#
+# Billing setup and the full launch checklist live in BILLING.md.
 
 name = "liftit"
 pages_build_output_dir = "dist"
@@ -21,3 +27,16 @@ compatibility_date = "2026-01-15"
 binding = "DB"
 database_name = "liftit"
 database_id = "17518621-e292-4aa7-888a-c15f4f38ad90"
+
+[vars]
+# Liftit Pro launch switch. While "false" (or unset) every signed-in account
+# is treated as Pro and nothing is gated — the beta build behaves as if
+# billing didn't exist. At launch: run `npm run cf:db:grandfather` first so
+# the beta cohort keeps Pro for life, then flip this to "true".
+BILLING_ENFORCED = "false"
+
+# Stripe price ids are plain vars, not secrets. Set the plans you actually
+# sell — the client only renders buy buttons for configured ones:
+# STRIPE_PRICE_MONTHLY  = "price_…"
+# STRIPE_PRICE_YEARLY   = "price_…"
+# STRIPE_PRICE_LIFETIME = "price_…"

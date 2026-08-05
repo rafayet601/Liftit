@@ -99,6 +99,14 @@ export async function runSync() {
                     authError = { stage: 'auth', message: 'your session expired' };
                     break;
                 }
+                if (err?.response?.status === 402) {
+                    // The server wants Liftit Pro for sync writes. Every other
+                    // queued op would get the same answer, so stop pushing —
+                    // ops stay queued and drain when the plan allows. The pull
+                    // below still runs: reads are never gated.
+                    pushError = { stage: 'entitlement', message: 'cloud sync needs Liftit Pro' };
+                    break;
+                }
                 console.warn(`[sync] op ${op.type} failed`, err?.message ?? err);
                 // Report the first failure only — the rest are usually the
                 // same outage, and the ops stay queued for the next attempt.
