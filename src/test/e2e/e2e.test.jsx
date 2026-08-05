@@ -92,6 +92,7 @@ function mockAiCoachFailure(status = 500) {
 // Mock platform native shell to avoid native calls in tests
 vi.mock('../../lib/platform', () => ({
     initNativeShell: vi.fn(),
+    isNative: vi.fn(async () => false),
     isStandalone: vi.fn(() => false),
     hapticSelection: vi.fn(),
     hapticLight: vi.fn(),

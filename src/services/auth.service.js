@@ -13,6 +13,8 @@ const AUTH_ENDPOINTS = {
     github: '/auth/github',
 };
 
+const ENTITLEMENT_KEY = 'liftit_entitlement';
+
 export { backendAvailable };
 
 export const loginWithOAuth = (provider) => {
@@ -26,6 +28,7 @@ export const logout = async () => {
     } finally {
         try {
             localStorage.removeItem('liftit_user');
+            localStorage.removeItem(ENTITLEMENT_KEY);
         } catch {
             /* ignore */
         }
@@ -38,15 +41,29 @@ export const getSession = async () => {
     // server responding with the older flat shape still signs people in
     // rather than silently dropping the session.
     const user = response.data?.user ?? (response.data?.id ? response.data : null);
+    // Older servers don't send an entitlement. null means "unknown", and the
+    // UI treats unknown as unrestricted — a client updated ahead of the
+    // server can never lock anyone out of sync.
+    const entitlement = response.data?.entitlement ?? null;
     if (user) {
         localStorage.setItem('liftit_user', JSON.stringify(user));
+        if (entitlement) localStorage.setItem(ENTITLEMENT_KEY, JSON.stringify(entitlement));
+        else localStorage.removeItem(ENTITLEMENT_KEY);
     }
-    return { ...response, data: { ...response.data, user } };
+    return { ...response, data: { ...response.data, user, entitlement } };
 };
 
 export const getStoredUser = () => {
     try {
         return JSON.parse(localStorage.getItem('liftit_user'));
+    } catch {
+        return null;
+    }
+};
+
+export const getStoredEntitlement = () => {
+    try {
+        return JSON.parse(localStorage.getItem(ENTITLEMENT_KEY));
     } catch {
         return null;
     }

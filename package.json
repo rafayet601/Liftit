@@ -16,6 +16,7 @@
     "cf:db:create": "wrangler d1 create liftit",
     "cf:db:migrate": "wrangler d1 execute liftit --remote --file=./schema.sql",
     "cf:db:migrate:local": "wrangler d1 execute liftit --local --file=./schema.sql",
+    "cf:db:grandfather": "wrangler d1 execute liftit --remote --file=./migrations/grandfather-beta.sql",
     "cf:tail": "wrangler pages deployment tail",
     "server": "cd server && npm run dev",
     "server:build": "cd server && npm run build",

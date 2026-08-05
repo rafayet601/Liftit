@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
     Settings as SettingsIcon,
     User,
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { db } from '../data/db';
 import { backendAvailable } from '../lib/api';
+import { isNative } from '../lib/platform';
+import { startCheckout, openBillingPortal } from '../services/billing.service';
 import { useSettings, useSyncStatus } from '../data/DataProvider';
 import { useAuth } from '../contexts/AuthContext';
 import { AI_PROVIDERS } from '../ai/providers';
@@ -25,11 +27,34 @@ import { useToast } from '../components/ui/Toast';
 
 export default function SettingsPage() {
     const settings = useSettings();
-    const { user, logout } = useAuth();
+    const { user, entitlement, logout, refreshSession } = useAuth();
     const { isOnline, isSyncing, pendingOps, syncError, requestSync } = useSyncStatus();
     const { showToast } = useToast();
     const fileRef = useRef(null);
     const [confirmWipe, setConfirmWipe] = useState(false);
+    const [native, setNative] = useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    useEffect(() => {
+        isNative().then(setNative).catch(() => {});
+    }, []);
+
+    // Returning from Stripe Checkout: clear the marker from the URL and
+    // re-pull the session so the new plan lands. The webhook can lag the
+    // redirect by a few seconds, hence the second pull.
+    useEffect(() => {
+        const billing = searchParams.get('billing');
+        if (!billing) return undefined;
+        const next = new URLSearchParams(searchParams);
+        next.delete('billing');
+        setSearchParams(next, { replace: true });
+        if (billing !== 'success') return undefined;
+        showToast('Payment received — activating Liftit Pro…', 'success');
+        refreshSession().catch(() => {});
+        const retry = setTimeout(() => refreshSession().catch(() => {}), 5000);
+        return () => clearTimeout(retry);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const exportData = () => {
         const blob = new Blob([db.export()], { type: 'application/json' });
@@ -120,9 +145,18 @@ export default function SettingsPage() {
                                 <p className="text-sm font-semibold text-white">{user.name}</p>
                                 <p className="text-xs text-ink-500">{user.email}</p>
                             </div>
-                            <Chip tone={isOnline ? 'success' : 'warning'}>
-                                {isOnline ? 'Online' : 'Offline'}
-                            </Chip>
+                            <div className="flex items-center gap-2">
+                                {entitlement?.billingEnforced && entitlement.plan === 'pro' && (
+                                    <Chip tone="success">
+                                        {entitlement.source === 'beta-grandfather'
+                                            ? 'Founding · Pro'
+                                            : 'Pro'}
+                                    </Chip>
+                                )}
+                                <Chip tone={isOnline ? 'success' : 'warning'}>
+                                    {isOnline ? 'Online' : 'Offline'}
+                                </Chip>
+                            </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                             <button
@@ -134,15 +168,38 @@ export default function SettingsPage() {
                                 <RefreshCw className={isSyncing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
                                 {isSyncing ? 'Syncing…' : pendingOps ? `Sync ${pendingOps} changes` : 'Sync now'}
                             </button>
+                            {entitlement?.billingEnforced
+                                && entitlement.plan === 'pro'
+                                && entitlement.manageable
+                                && !native && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            await openBillingPortal();
+                                        } catch (err) {
+                                            showToast(err.message ?? 'Could not open the billing portal.', 'error');
+                                        }
+                                    }}
+                                    className="btn-ghost"
+                                >
+                                    Manage subscription
+                                </button>
+                            )}
                             <button type="button" onClick={logout} className="btn-ghost text-red-400">
                                 <LogOut className="h-4 w-4" /> Sign out
                             </button>
                         </div>
+                        {entitlement?.billingEnforced && entitlement.plan !== 'pro' && (
+                            <UpgradeOptions entitlement={entitlement} native={native} />
+                        )}
                         {syncError && (
                             <p className="text-sm text-red-400">
                                 {syncError.stage === 'auth'
                                     ? "Sync stopped because your session expired — sign in again to pick it up."
-                                    : `Last sync didn't finish (${syncError.message}).`}{' '}
+                                    : syncError.stage === 'entitlement'
+                                        ? 'Cloud sync is a Liftit Pro feature.'
+                                        : `Last sync didn't finish (${syncError.message}).`}{' '}
                                 <span className="text-ink-400">
                                     Everything you've logged is safe on this device, and we'll try
                                     again.
@@ -301,6 +358,54 @@ function AiProviderCard({ settings }) {
             )}
         </Card>
         </Glass>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/* Liftit Pro upgrade — web checkout only; native builds use IAP        */
+/* ------------------------------------------------------------------ */
+const PLAN_LABELS = { monthly: 'Monthly', yearly: 'Yearly', lifetime: 'Lifetime' };
+
+function UpgradeOptions({ entitlement, native }) {
+    const { showToast } = useToast();
+    const [busy, setBusy] = useState(null);
+    const plans = entitlement?.checkoutPlans ?? [];
+    const buyable = !native && plans.length > 0;
+
+    return (
+        <div className="space-y-3">
+            <p className="text-sm text-ink-400">
+                Cloud backup & sync is part of{' '}
+                <span className="font-semibold text-white">Liftit Pro</span>. Your training stays
+                safe on this device either way, and your existing cloud backup can still be
+                pulled down any time.
+                {native && plans.length > 0
+                    && ' Upgrade from the Liftit website — your account carries over.'}
+            </p>
+            {buyable && (
+                <div className="flex flex-wrap gap-2">
+                    {plans.map((plan) => (
+                        <button
+                            key={plan}
+                            type="button"
+                            disabled={Boolean(busy)}
+                            className="btn-primary"
+                            onClick={async () => {
+                                setBusy(plan);
+                                try {
+                                    await startCheckout(plan);
+                                } catch (err) {
+                                    showToast(err.message ?? 'Checkout failed.', 'error');
+                                    setBusy(null);
+                                }
+                            }}
+                        >
+                            {busy === plan ? 'Opening…' : `Go Pro · ${PLAN_LABELS[plan] ?? plan}`}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
     );
 }
 

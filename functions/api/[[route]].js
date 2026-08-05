@@ -19,7 +19,16 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { chunk, clampText, LIMITS } from './_lib';
+import {
+    chunk,
+    clampText,
+    effectiveEntitlement,
+    hexToBytes,
+    LIMITS,
+    parseStripeSignature,
+    PLANS,
+    resolveEntitlementUpdate,
+} from './_lib';
 
 const SESSION_COOKIE = 'token';
 const STATE_COOKIE = 'oauth_state';
@@ -148,6 +157,58 @@ async function requireUser(c) {
     return { user, response: null };
 }
 
+/* ---------- entitlements ---------- */
+
+// The launch switch. While BILLING_ENFORCED is unset (or anything but the
+// string "true") every signed-in account resolves to Pro and no route gates
+// anything — the beta build behaves as if billing didn't exist. Flip the var
+// at launch, after `npm run cf:db:grandfather` has locked in the beta cohort.
+const billingEnforced = (c) => c.env.BILLING_ENFORCED === 'true';
+
+/** Never throws: a deploy can precede the entitlements migration, and
+ *  neither sync nor sign-in may 500 for that. */
+async function entitlementRow(c, userId) {
+    try {
+        return await c.env.DB.prepare(
+            `SELECT plan, source, expires_at, stripe_customer_id, stripe_subscription_id
+             FROM entitlements WHERE user_id = ?`,
+        )
+            .bind(userId)
+            .first();
+    } catch {
+        return null;
+    }
+}
+
+/** Effective entitlement for a user, plus what the client may offer them. */
+async function getEntitlement(c, userId) {
+    const row = await entitlementRow(c, userId);
+    return {
+        ...effectiveEntitlement(row, { enforced: billingEnforced(c) }),
+        // Which checkout plans this deployment can sell (web builds only).
+        // Empty until Stripe is configured, so no dead buy buttons ever render.
+        checkoutPlans: checkoutPlans(c),
+        // Whether a Stripe customer exists to open the billing portal for.
+        manageable: Boolean(row?.stripe_customer_id),
+    };
+}
+
+/**
+ * Gate a sync *write* on Pro. Reads and deletes are deliberately never
+ * gated: a lapsed subscriber can always pull their own history back down or
+ * remove it — the data belongs to them, not to the subscription.
+ */
+async function requirePro(c, userId) {
+    const entitlement = await getEntitlement(c, userId);
+    if (entitlement.plan !== PLANS.PRO) {
+        return c.json(
+            { error: 'Cloud sync requires Liftit Pro', code: 'pro_required', entitlement },
+            402,
+        );
+    }
+    return null;
+}
+
 /* ---------- auth ---------- */
 
 // Registered before /auth/:provider — otherwise the wildcard captures "me"
@@ -158,7 +219,7 @@ async function requireUser(c) {
 app.get('/auth/me', async (c) => {
     const user = await currentUser(c);
     if (!user) return c.json({ error: 'Session expired' }, 401);
-    return c.json({ user });
+    return c.json({ user, entitlement: await getEntitlement(c, user.id) });
 });
 
 app.post('/auth/logout', (c) => {
@@ -342,6 +403,295 @@ app.get('/auth/:provider/callback', async (c) => {
     }
 });
 
+/* ---------- billing ---------- */
+
+// Everything here is dormant until its secrets exist: no STRIPE_SECRET_KEY
+// means no checkout or portal, no STRIPE_WEBHOOK_SECRET means the webhook
+// rejects everything, and the client hides purchase UI whenever
+// checkoutPlans comes back empty. Turning billing on is a dashboard-only
+// operation — the setup and launch checklist live in BILLING.md.
+
+const STRIPE_API = 'https://api.stripe.com/v1';
+
+const PRICE_KEYS = {
+    monthly: 'STRIPE_PRICE_MONTHLY',
+    yearly: 'STRIPE_PRICE_YEARLY',
+    lifetime: 'STRIPE_PRICE_LIFETIME',
+};
+
+const checkoutPlans = (c) =>
+    c.env.STRIPE_SECRET_KEY
+        ? Object.keys(PRICE_KEYS).filter((plan) => c.env[PRICE_KEYS[plan]])
+        : [];
+
+// Renewal webhooks can lag the period boundary, and dunning takes days —
+// don't cut a paying user off while Stripe is still retrying their card.
+const GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+async function stripeRequest(c, method, path, params) {
+    const init = { method, headers: { authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}` } };
+    if (params && method !== 'GET') {
+        init.headers['content-type'] = 'application/x-www-form-urlencoded';
+        init.body = new URLSearchParams(params);
+    }
+    const res = await fetch(`${STRIPE_API}${path}`, init);
+    let json = null;
+    try {
+        json = await res.json();
+    } catch {
+        json = null;
+    }
+    if (!res.ok) throw new Error(json?.error?.message ?? `Stripe responded ${res.status}`);
+    return json;
+}
+
+async function verifyStripeSignature(payload, header, secret, toleranceSec = 300) {
+    const parsed = parseStripeSignature(header);
+    if (!parsed) return false;
+    if (Math.abs(Date.now() / 1000 - parsed.t) > toleranceSec) return false;
+    const key = await hmacKey(secret);
+    const data = enc.encode(`${parsed.t}.${payload}`);
+    for (const sig of parsed.signatures) {
+        const bytes = hexToBytes(sig);
+        if (bytes && (await crypto.subtle.verify('HMAC', key, bytes, data))) return true;
+    }
+    return false;
+}
+
+/** Write an entitlement, honouring resolveEntitlementUpdate's safety rules. */
+async function applyEntitlementUpdate(c, userId, update) {
+    const existing = await entitlementRow(c, userId);
+    const resolved = resolveEntitlementUpdate(existing, update);
+    if (!resolved) return;
+    const now = Date.now();
+    await c.env.DB.prepare(
+        `INSERT INTO entitlements
+             (user_id, plan, source, expires_at, stripe_customer_id, stripe_subscription_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET
+             plan = excluded.plan,
+             source = excluded.source,
+             expires_at = excluded.expires_at,
+             stripe_customer_id = COALESCE(excluded.stripe_customer_id, entitlements.stripe_customer_id),
+             stripe_subscription_id = COALESCE(excluded.stripe_subscription_id, entitlements.stripe_subscription_id),
+             updated_at = excluded.updated_at`,
+    )
+        .bind(
+            userId,
+            resolved.plan,
+            resolved.source,
+            resolved.expiresAt ?? null,
+            resolved.stripeCustomerId ?? null,
+            resolved.stripeSubscriptionId ?? null,
+            now,
+            now,
+        )
+        .run();
+}
+
+async function applySubscription(c, userId, sub) {
+    // past_due keeps access: Stripe is mid-dunning and usually recovers it.
+    const active = sub.status === 'active' || sub.status === 'trialing' || sub.status === 'past_due';
+    // 2025+ Stripe API versions moved current_period_end onto the items.
+    const periodEndSec = sub.current_period_end ?? sub.items?.data?.[0]?.current_period_end ?? 0;
+    // Never store an accidental lifetime: if Stripe didn't say when the
+    // period ends, grant a bounded window and let the next webhook extend it.
+    const expiresAt = periodEndSec
+        ? periodEndSec * 1000 + GRACE_MS
+        : Date.now() + 35 * 24 * 60 * 60 * 1000;
+    const ids = {
+        stripeCustomerId: typeof sub.customer === 'string' ? sub.customer : null,
+        stripeSubscriptionId: sub.id ?? null,
+    };
+    await applyEntitlementUpdate(
+        c,
+        userId,
+        active
+            ? { plan: PLANS.PRO, source: 'stripe', expiresAt, ...ids }
+            : { plan: PLANS.FREE, source: 'stripe', expiresAt: null, ...ids },
+    );
+}
+
+// Unhandled event types are simply acknowledged — Stripe sends whatever the
+// endpoint is subscribed to, and over-subscribing must not cause retries.
+async function handleStripeEvent(c, event) {
+    const obj = event?.data?.object ?? {};
+    switch (event?.type) {
+        case 'checkout.session.completed': {
+            const userId = obj.client_reference_id || obj.metadata?.user_id;
+            if (!userId) return;
+            if (obj.mode === 'payment') {
+                // Lifetime unlock — a one-off payment, no expiry ever.
+                await applyEntitlementUpdate(c, userId, {
+                    plan: PLANS.PRO,
+                    source: 'stripe',
+                    expiresAt: null,
+                    stripeCustomerId: typeof obj.customer === 'string' ? obj.customer : null,
+                });
+            } else if (obj.mode === 'subscription' && typeof obj.subscription === 'string') {
+                const sub = await stripeRequest(c, 'GET', `/subscriptions/${obj.subscription}`);
+                await applySubscription(c, userId, sub);
+            }
+            return;
+        }
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+        case 'customer.subscription.deleted': {
+            const userId = obj.metadata?.user_id;
+            if (userId) await applySubscription(c, userId, obj);
+            return;
+        }
+    }
+}
+
+// Mirrors what /auth/me already reports; exists so the post-checkout flow
+// can refresh the plan without refetching the whole session.
+app.get('/billing/entitlement', async (c) => {
+    const { user, response } = await requireUser(c);
+    if (response) return response;
+    return c.json({ entitlement: await getEntitlement(c, user.id) });
+});
+
+/** Start a Stripe Checkout session for one of the configured plans. */
+app.post('/billing/checkout', async (c) => {
+    const { user, response } = await requireUser(c);
+    if (response) return response;
+    if (!c.env.STRIPE_SECRET_KEY) return c.json({ error: 'Billing is not configured' }, 503);
+
+    let body = {};
+    try {
+        body = await c.req.json();
+    } catch {
+        body = {};
+    }
+    const plan = PRICE_KEYS[body.plan] ? body.plan : null;
+    const price = plan ? c.env[PRICE_KEYS[plan]] : null;
+    if (!price) return c.json({ error: 'Unknown plan' }, 400);
+
+    const origin = appOrigin(c);
+    const params = {
+        mode: plan === 'lifetime' ? 'payment' : 'subscription',
+        'line_items[0][price]': price,
+        'line_items[0][quantity]': '1',
+        success_url: `${origin}/settings?billing=success`,
+        cancel_url: `${origin}/settings?billing=cancelled`,
+        client_reference_id: user.id,
+        'metadata[user_id]': user.id,
+        allow_promotion_codes: 'true',
+    };
+    // The subscription object is what the recurring webhooks carry, so the
+    // user id must ride on it, not just on the session.
+    if (plan !== 'lifetime') params['subscription_data[metadata][user_id]'] = user.id;
+    // Reuse the Stripe customer when one exists (Stripe rejects customer +
+    // customer_email together, so it's strictly either/or).
+    const row = await entitlementRow(c, user.id);
+    if (row?.stripe_customer_id) params.customer = row.stripe_customer_id;
+    else params.customer_email = user.email;
+
+    try {
+        const session = await stripeRequest(c, 'POST', '/checkout/sessions', params);
+        return c.json({ url: session.url });
+    } catch (err) {
+        console.error('[billing] checkout', err?.message ?? err);
+        return c.json({ error: 'Could not start checkout' }, 502);
+    }
+});
+
+/** Stripe customer portal — manage plan, update card, cancel. */
+app.post('/billing/portal', async (c) => {
+    const { user, response } = await requireUser(c);
+    if (response) return response;
+    if (!c.env.STRIPE_SECRET_KEY) return c.json({ error: 'Billing is not configured' }, 503);
+    const row = await entitlementRow(c, user.id);
+    if (!row?.stripe_customer_id) return c.json({ error: 'No billing account for this user' }, 404);
+    try {
+        const session = await stripeRequest(c, 'POST', '/billing_portal/sessions', {
+            customer: row.stripe_customer_id,
+            return_url: `${appOrigin(c)}/settings`,
+        });
+        return c.json({ url: session.url });
+    } catch (err) {
+        console.error('[billing] portal', err?.message ?? err);
+        return c.json({ error: 'Could not open the billing portal' }, 502);
+    }
+});
+
+/**
+ * Stripe webhook. Subscribe it to: checkout.session.completed and
+ * customer.subscription.created / updated / deleted.
+ */
+app.post('/billing/webhook', async (c) => {
+    const secret = c.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return c.json({ error: 'Billing is not configured' }, 503);
+    const payload = await c.req.text();
+    const valid = await verifyStripeSignature(payload, c.req.header('stripe-signature'), secret);
+    if (!valid) return c.json({ error: 'Invalid signature' }, 400);
+    let event;
+    try {
+        event = JSON.parse(payload);
+    } catch {
+        return c.json({ error: 'Invalid JSON' }, 400);
+    }
+    try {
+        await handleStripeEvent(c, event);
+    } catch (err) {
+        // 500 makes Stripe retry with backoff — the right call for a
+        // transient D1 or Stripe API hiccup.
+        console.error('[billing] webhook', err?.message ?? err);
+        return c.json({ error: 'Webhook handling failed' }, 500);
+    }
+    return c.json({ received: true });
+});
+
+/**
+ * RevenueCat webhook, for the iOS/Android builds (App Store rules require
+ * in-app purchase there). RevenueCat must send its Authorization header and
+ * the native client must log in to RevenueCat with the Liftit user id so
+ * app_user_id lines up — both covered in BILLING.md.
+ */
+app.post('/billing/revenuecat', async (c) => {
+    const secret = c.env.REVENUECAT_WEBHOOK_AUTH;
+    if (!secret) return c.json({ error: 'Billing is not configured' }, 503);
+    if (c.req.header('authorization') !== secret) return c.json({ error: 'Unauthorized' }, 401);
+    let body;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json({ error: 'Invalid JSON' }, 400);
+    }
+    const ev = body?.event ?? {};
+    const userId = typeof ev.app_user_id === 'string' ? ev.app_user_id : null;
+    // Anonymous RevenueCat ids (user never signed in) can't map to an
+    // account — acknowledge and skip rather than erroring into retries.
+    if (!userId || userId.startsWith('$RCAnonymousID')) return c.json({ received: true });
+    const source = ev.store === 'PLAY_STORE' ? 'google' : 'apple';
+    const ACTIVATE = [
+        'INITIAL_PURCHASE',
+        'RENEWAL',
+        'UNCANCELLATION',
+        'NON_RENEWING_PURCHASE',
+        'PRODUCT_CHANGE',
+    ];
+    try {
+        if (ACTIVATE.includes(ev.type)) {
+            await applyEntitlementUpdate(c, userId, {
+                plan: PLANS.PRO,
+                source,
+                // No expiration_at_ms means a non-renewing (lifetime) purchase.
+                expiresAt: ev.expiration_at_ms ? ev.expiration_at_ms + GRACE_MS : null,
+            });
+        } else if (ev.type === 'EXPIRATION') {
+            // CANCELLATION only means auto-renew went off — access runs until
+            // EXPIRATION, so that's the only event that downgrades.
+            await applyEntitlementUpdate(c, userId, { plan: PLANS.FREE, source, expiresAt: null });
+        }
+    } catch (err) {
+        console.error('[billing] revenuecat', err?.message ?? err);
+        return c.json({ error: 'Webhook handling failed' }, 500);
+    }
+    return c.json({ received: true });
+});
+
 /* ---------- workouts ---------- */
 
 const toMillis = (v) => {
@@ -413,6 +763,8 @@ app.get('/workouts', async (c) => {
 app.put('/workouts/:clientId', async (c) => {
     const { user, response } = await requireUser(c);
     if (response) return response;
+    const gate = await requirePro(c, user.id);
+    if (gate) return gate;
 
     const clientId = c.req.param('clientId');
     if (!clientId || clientId.length > LIMITS.clientId) {
