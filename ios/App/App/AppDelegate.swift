@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import WatchConnectivity
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +8,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Apple Watch bridge: the CapgoWatch plugin (CapgoCapacitorWatch 8.1.3,
+        // via CapApp-SPM) installs its own WCSessionDelegate and activates the
+        // session when it loads. Do NOT assign WCSession.default.delegate here —
+        // the plugin's delegate routes watch messages to JS, and replacing it
+        // would silently drop them. An early activate() is harmless and just
+        // starts the session sooner.
+        if WCSession.isSupported() {
+            WCSession.default.activate()
+        }
         return true
     }
 

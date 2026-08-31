@@ -15,6 +15,7 @@ import { useUnit } from '../contexts/UnitContext';
 import { workoutVolume, prTimeline, e1rmTrend } from '../engine/analytics';
 import { Card, Chip, EmptyState, PageHeader, Sheet } from '../components/ui/Primitives';
 import Glass from '../components/ui/Glass';
+import ShareCard from '../components/ui/ShareCard';
 import { useToast } from '../components/ui/Toast';
 
 /**
@@ -163,6 +164,17 @@ function SessionDetail({ workout, onClose, onExercise }) {
                     <Chip>{workout.sets.length} sets</Chip>
                 </div>
 
+                {workout.notes?.trim() && (
+                    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+                        <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-ink-500">
+                            Notes
+                        </p>
+                        <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-ink-300">
+                            {workout.notes}
+                        </p>
+                    </div>
+                )}
+
                 {groups.map(([exerciseId, sets]) => {
                     const exercise = db.exercises.byId(exerciseId);
                     return (
@@ -185,6 +197,11 @@ function SessionDetail({ workout, onClose, onExercise }) {
                                         <tr key={i} className="border-t border-white/[0.05]">
                                             <td className="py-1.5 pr-2 text-xs text-ink-500">#{s.setNumber}</td>
                                             <td className="py-1.5 font-semibold tabular-nums text-white">
+                                                {s.isWarmup && (
+                                                    <span className="mr-1.5 rounded border border-amber-400/30 bg-amber-400/10 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                                                        W
+                                                    </span>
+                                                )}
                                                 {displayWeight(s.weight)} {unit} × {s.reps}
                                             </td>
                                             <td className="py-1.5 text-right text-xs tabular-nums text-ink-500">
@@ -230,6 +247,10 @@ function ExerciseDetail({ exerciseId, workouts, onClose }) {
     const exercise = db.exercises.byId(exerciseId);
     const trend = useMemo(() => e1rmTrend(workouts, exerciseId, 20), [workouts, exerciseId]);
     const best = trend.reduce((max, p) => Math.max(max, p.e1rm), 0);
+    const prEvent = useMemo(
+        () => prTimeline(workouts, 200).find((e) => e.exerciseId === exerciseId),
+        [workouts, exerciseId],
+    );
 
     return (
         <Sheet open onClose={onClose} title={exercise?.name ?? 'Exercise'}>
@@ -248,13 +269,15 @@ function ExerciseDetail({ exerciseId, workouts, onClose }) {
                         <div className="font-display text-xl font-bold tabular-nums text-white">
                             {trend.length}
                         </div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-ink-500">
-                            Sessions
-                        </div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-ink-500">
+                        Sessions
                     </div>
                 </div>
+            </div>
 
-                {/* Sparkline */}
+            {prEvent && <ShareCard event={prEvent} />}
+
+            {/* Sparkline */}
                 {trend.length >= 2 ? (
                     <Sparkline
                         points={trend.map((p) => displayWeight(p.e1rm))}

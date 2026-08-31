@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { epley, brzycki, estimate1RM, detectPRs } from '../engine/e1rm';
-import { suggestNextSession, sessionsForExercise } from '../engine/progression';
+import { suggestNextSession, sessionsForExercise, getDeloadRecommendation, analyzeDoubleProgression } from '../engine/progression';
 import {
     generateProgram,
     phaseForWeek,
@@ -10,10 +10,12 @@ import {
 import {
     dailyVolumeSeries,
     weeklyVolumeComparison,
+    weeklyVolumeTarget,
     muscleGroupSets,
     e1rmTrend,
     prTimeline,
     trainingStreak,
+    volumeTrend,
 } from '../engine/analytics';
 import { getLibraryExercise } from '../data/exercises';
 
@@ -98,6 +100,47 @@ describe('progression', () => {
         );
         expect(r.action).toBe('deload');
         expect(r.weight).toBeCloseTo(72.5, 0.6);
+    });
+
+    it('escalates to a block deload when volume and intensity plateau for 3+ weeks', () => {
+        // Flat four weeks: same weight, same reps, RPE fine — the per-session
+        // rule alone would say "hold", but the block analyzer sees a plateau.
+        const day = 24 * 60 * 60 * 1000;
+        const base = Date.now() - 28 * day;
+        const sessions = [3, 2, 1, 0].map((i) => ({
+            startedAt: new Date(base + i * 7 * day).toISOString(),
+            sets: [
+                { weight: 80, reps: 10, rpe: 8 },
+                { weight: 80, reps: 10, rpe: 8 },
+            ],
+        }));
+        const r = suggestNextSession(sessions, targets);
+        expect(r.action).toBe('deload');
+        expect(r.weight).toBeCloseTo(72.5, 0.6);
+        expect(r.reason).toMatch(/plateaued|recover/i);
+    });
+
+    it('does not block progression when the block analysis is healthy', () => {
+        const day = 24 * 60 * 60 * 1000;
+        const base = Date.now() - 14 * day;
+        const sessions = [2, 1, 0].map((i) => ({
+            startedAt: new Date(base + i * 7 * day).toISOString(),
+            sets: [{ weight: 80 + i * 2.5, reps: 12, rpe: 8 }],
+        }));
+        const r = suggestNextSession(sessions, targets);
+        expect(r.action).toBe('increase');
+    });
+
+    it('recommends a deload from the block-level analysis', () => {
+        const day = 24 * 60 * 60 * 1000;
+        const base = Date.now() - 28 * day;
+        const sessions = [3, 2, 1, 0].map((i) => ({
+            startedAt: new Date(base + i * 7 * day).toISOString(),
+            sets: [{ weight: 80, reps: 10, rpe: 8 }],
+        }));
+        const rec = getDeloadRecommendation(analyzeDoubleProgression(sessions));
+        expect(rec.shouldDeload).toBe(true);
+        expect(rec.suggestedIntensityReduction).toBeCloseTo(0.9, 5);
     });
 
     it('groups history per exercise newest-first', () => {
@@ -212,5 +255,51 @@ describe('analytics', () => {
     it('counts streaks with single rest days allowed', () => {
         expect(trainingStreak([], now)).toBe(0);
         expect(trainingStreak(workouts, now)).toBe(2);
+    });
+
+    it('builds a per-session volume trend oldest-first', () => {
+        const trend = volumeTrend(workouts, 'barbell-bench-press');
+        expect(trend).toHaveLength(2);
+        expect(trend[0]).toEqual({ date: expect.any(String), volume: 640 }); // 80 × 8
+        expect(trend[1].volume).toBe(660); // 82.5 × 8
+        // warmup sets are excluded
+        const withWarmup = [
+            wo(1, [
+                { exerciseId: 'barbell-bench-press', weight: 40, reps: 8, setNumber: 1, isWarmup: true },
+                { exerciseId: 'barbell-bench-press', weight: 82.5, reps: 8, setNumber: 2 },
+            ]),
+        ];
+        expect(volumeTrend(withWarmup, 'barbell-bench-press')[0].volume).toBe(660);
+    });
+
+    it('derives the weekly volume target from program sets and recent set average', () => {
+        const program = {
+            days: [
+                {
+                    isRestDay: false,
+                    exercises: [
+                        { targetSets: 3 },
+                        { targetSets: 3 },
+                    ],
+                },
+                { isRestDay: true, exercises: [] },
+            ],
+        };
+        // Recent 28 days: 3 working sets averaging (82.5×8 + 100×6 + 80×8)/3.
+        const avg = (82.5 * 8 + 100 * 6 + 80 * 8) / 3;
+        expect(weeklyVolumeTarget(workouts, program, getLibraryExercise, now)).toBe(
+            Math.round(avg * 6),
+        );
+    });
+
+    it('falls back to matching last week when no program is active', () => {
+        expect(weeklyVolumeTarget(workouts, null, getLibraryExercise, now)).toBe(640);
+    });
+
+    it('returns zero target when there is no data to justify one', () => {
+        expect(weeklyVolumeTarget([], null, getLibraryExercise, now)).toBe(0);
+        expect(
+            weeklyVolumeTarget([], { days: [{ isRestDay: false, exercises: [{ targetSets: 3 }] }] }, getLibraryExercise, now),
+        ).toBe(0);
     });
 });

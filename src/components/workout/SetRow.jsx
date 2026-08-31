@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import clsx from 'clsx';
 import { useUnit } from '../../contexts/UnitContext';
 import { Stepper } from '../ui/Primitives';
+import PlateCalculator from './PlateCalculator';
 import { hapticLight, hapticSuccess } from '../../lib/platform';
 
 const RPE_OPTIONS = [6, 7, 8, 9, 10];
@@ -82,15 +83,37 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                 'rounded-2xl border p-3 transition-all duration-200',
                 set.completed
                     ? 'border-emerald-500/25 bg-emerald-500/[0.05]'
+                    : set.isWarmup
+                    ? 'border-amber-400/20 bg-amber-400/[0.04]'
                     : canComplete
                     ? 'border-accent/20 bg-white/[0.02] shadow-[0_0_16px_-6px_rgba(139,92,246,0.2)]'
                     : 'border-white/[0.07] bg-white/[0.02]',
             )}
         >
             <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-widest text-ink-500">
-                    Set {index + 1}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-ink-500">
+                        {set.isWarmup ? 'Warmup' : `Set ${index + 1}`}
+                    </span>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={!!set.isWarmup}
+                        aria-label={`Mark set ${index + 1} as warmup`}
+                        onClick={() => {
+                            hapticLight();
+                            onChange({ isWarmup: !set.isWarmup });
+                        }}
+                        className={clsx(
+                            'rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest transition-colors',
+                            set.isWarmup
+                                ? 'border-amber-400/40 bg-amber-400/15 text-amber-300'
+                                : 'border-white/[0.07] bg-white/[0.02] text-ink-600 hover:text-ink-400',
+                        )}
+                    >
+                        W
+                    </button>
+                </div>
                 {ghost && (
                     <span className="text-xs tabular-nums text-ink-500">
                         last: {displayWeight(ghost.weight)} {unit} × {ghost.reps}
@@ -112,6 +135,7 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                         onBlur={commitWeight}
                         onStep={stepWeight}
                     />
+                    <PlateCalculator weightKg={set.weight} />
                 </div>
                 <div>
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-ink-500">

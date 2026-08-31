@@ -38,6 +38,12 @@ function mapWorkoutPayload(workout) {
     };
 }
 
+function mapProgramPayload(program) {
+    // The server stores programs as opaque JSON documents — the client
+    // engine owns their meaning. Ship the canonical shape as-is.
+    return { ...program };
+}
+
 /** Short, user-showable description of a failed request. */
 function describeFailure(err) {
     const status = err?.response?.status;
@@ -73,6 +79,7 @@ export async function runSync() {
     syncing = true;
     const done = [];
     let pulled = 0;
+    let pulledPrograms = 0;
     let authFailed = false;
     let authError = null;
     let pushError = null;
@@ -86,10 +93,10 @@ export async function runSync() {
                     await put(`/workouts/${op.payload.id}`, mapWorkoutPayload(op.payload));
                 } else if (op.type === 'workout.delete') {
                     await del(`/workouts/${op.payload.id}`);
-                } else if (op.type === 'program.save' || op.type === 'program.delete') {
-                    // Programs are generated deterministically on-device from
-                    // settings, so there's nothing worth round-tripping yet.
-                    // Drop the op rather than leaving it queued forever.
+                } else if (op.type === 'program.save') {
+                    await put(`/programs/${op.payload.id}`, mapProgramPayload(op.payload));
+                } else if (op.type === 'program.delete') {
+                    await del(`/programs/${op.payload.id}`);
                 }
                 done.push(op.id);
             } catch (err) {
@@ -127,11 +134,21 @@ export async function runSync() {
                 console.warn('[sync] pull failed', err?.message ?? err);
                 pullError = { stage: 'pull', message: describeFailure(err) };
             }
+            try {
+                const res = await get('/programs');
+                const remote = res?.data?.data;
+                if (Array.isArray(remote)) pulledPrograms = db.programs.importRemote(remote);
+            } catch (err) {
+                // Programs are supplementary — never mask a successful
+                // workout pull behind a program pull failure, but do log it.
+                console.warn('[sync] program pull failed', err?.message ?? err);
+                pullError = pullError ?? { stage: 'pull', message: describeFailure(err) };
+            }
         }
 
         return {
             pushed: done.length,
-            pulled,
+            pulled: pulled + pulledPrograms,
             remaining: db.sync.pendingOps().length,
             // Auth first (it aborted the run), then pull — a failed pull can
             // leave this device missing history, while a failed push op is

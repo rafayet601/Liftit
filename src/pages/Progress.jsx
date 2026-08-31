@@ -9,7 +9,7 @@ import {
     Tooltip,
     ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, Trophy, Dumbbell, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
+import { TrendingUp, Trophy, Dumbbell, AlertCircle, CheckCircle2, Zap, Coffee, Activity } from 'lucide-react';
 import clsx from 'clsx';
 import { db } from '../data/db';
 import { useWorkouts } from '../data/DataProvider';
@@ -20,15 +20,21 @@ import {
     prTimeline,
     frequencyHeatmap,
     recentExerciseIds,
+    volumeTrend,
 } from '../engine/analytics';
 import {
     sessionsForExercise,
     analyzeDoubleProgression,
     getDeloadRecommendation,
-    getProgressionRecommendation
+    getProgressionRecommendation,
+    explainProgression
 } from '../engine/progression';
+import { acwr, applyFatigueContext, applyReadinessContext } from '../engine/fatigue';
+import { useRecovery } from '../contexts/RecoveryContext';
 import { MUSCLE_GROUPS } from '../data/exercises';
 import { Card, Chip, EmptyState, PageHeader } from '../components/ui/Primitives';
+import SuggestionWhy, { WhyButton } from '../components/workout/SuggestionWhy';
+import BodyweightCard from '../components/progress/BodyweightCard';
 import Glass from '../components/ui/Glass';
 
 /**
@@ -62,28 +68,53 @@ function ProgressionBadge({ trend, priority }) {
     );
 }
 
-function ProgressionRecommendationCard({ recommendation, exerciseName }) {
+function ProgressionRecommendationCard({ recommendation, exerciseName, onWhy }) {
     if (!recommendation) return null;
-    
+
     const bgMap = {
         success: 'border-emerald-500/20 bg-emerald-500/5',
         warning: 'border-amber-500/20 bg-amber-500/5',
         info: 'border-blue-500/20 bg-blue-500/5',
     };
-    
+
     return (
         <Card className={`space-y-3 border ${bgMap[recommendation.priority]}`}>
             <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <h3 className="font-semibold text-white">{recommendation.title}</h3>
                         <ProgressionBadge trend={recommendation.action} priority={recommendation.priority} />
+                        {exerciseName && <Chip>{exerciseName}</Chip>}
                     </div>
                     <p className="mt-1 text-sm text-zinc-400">{recommendation.description}</p>
                     {recommendation.details && (
                         <p className="mt-2 text-xs text-zinc-500">{recommendation.details}</p>
                     )}
                 </div>
+                {onWhy && <WhyButton onClick={onWhy} label="Why this recommendation?" />}
+            </div>
+        </Card>
+    );
+}
+
+function DeloadCard({ recommendation }) {
+    if (!recommendation?.shouldDeload) return null;
+    return (
+        <Card
+            className="flex items-start gap-3 border-amber-500/25 bg-amber-500/[0.06]"
+            data-testid="deload-card"
+        >
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
+                <Coffee className="h-4 w-4" />
+            </span>
+            <div>
+                <h3 className="font-semibold text-amber-200">Deload recommended</h3>
+                <p className="mt-0.5 text-sm text-zinc-400">{recommendation.reason}</p>
+                <p className="mt-1.5 text-xs text-amber-300/80">
+                    Run a lighter week: cut weights to ~
+                    {Math.round(recommendation.suggestedIntensityReduction * 100)}% and keep the
+                    movements. Then come back and push.
+                </p>
             </div>
         </Card>
     );
@@ -93,6 +124,24 @@ export default function Progress() {
     const workouts = useWorkouts();
     const { unit, displayWeight } = useUnit();
     const [timeframe, setTimeframe] = useState('30days');
+    const [metric, setMetric] = useState('e1rm'); // 'e1rm' | 'volume'
+    const [whyOpen, setWhyOpen] = useState(false);
+
+    const fatigue = useMemo(() => acwr(workouts), [workouts]);
+    const { readiness } = useRecovery();
+    const acwrChip = {
+        spike: { tone: 'danger', label: fatigue.ratio ? `Load spike · ACWR ${fatigue.ratio}` : 'Load spike' },
+        detrend: { tone: 'warning', label: fatigue.ratio ? `Load taper · ACWR ${fatigue.ratio}` : 'Load taper' },
+        balanced: { tone: 'success', label: fatigue.ratio ? `Balanced load · ACWR ${fatigue.ratio}` : 'Balanced load' },
+        insufficient_data: { tone: 'steel', label: 'Building load history' },
+    }[fatigue.status] ?? { tone: 'default', label: fatigue.status };
+    const readinessChip = readiness && readiness.status !== 'insufficient_data'
+        ? {
+              fatigued: { tone: 'danger', label: `Readiness ${readiness.score} · fatigued` },
+              caution: { tone: 'warning', label: `Readiness ${readiness.score} · caution` },
+              ready: { tone: 'success', label: `Readiness ${readiness.score} · ready` },
+          }[readiness.status] ?? null
+        : null;
 
     const trackedExercises = useMemo(
         () =>
@@ -122,17 +171,36 @@ export default function Progress() {
     );
 
     const progressionData = useMemo(() => {
-        if (!activeId) return { analysis: null, recommendation: null, deloadRec: null };
-        
+        if (!activeId) return { analysis: null, recommendation: null, deloadRec: null, explanation: null };
+
         const sessions = sessionsForExercise(workouts, activeId, 12);
-        if (!sessions.length) return { analysis: null, recommendation: null, deloadRec: null };
-        
+        if (!sessions.length) return { analysis: null, recommendation: null, deloadRec: null, explanation: null };
+
         const analysis = analyzeDoubleProgression(sessions);
         const recommendation = getProgressionRecommendation(sessions, analysis, unit);
-        const deloadRec = getDeloadRecommendation(analysis);
-        
-        return { analysis, recommendation, deloadRec };
-    }, [workouts, activeId, unit]);
+        const deloadRec = applyReadinessContext(
+            applyFatigueContext(getDeloadRecommendation(analysis), fatigue),
+            readiness,
+        );
+        const explanation = explainProgression(sessions);
+
+        return { analysis, recommendation, deloadRec, explanation };
+    }, [workouts, activeId, unit, fatigue, readiness]);
+
+    const volumeSeries = useMemo(
+        () =>
+            metric === 'volume' && activeId
+                ? volumeTrend(workouts, activeId, trendLimit).map((p) => ({
+                      ...p,
+                      volumeDisplay: Math.round(displayWeight(p.volume)),
+                      label: new Date(p.date).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                      }),
+                  }))
+                : [],
+        [metric, workouts, activeId, displayWeight, trendLimit],
+    );
 
     const muscles = useMemo(
         () => muscleGroupSets(workouts, (id) => db.exercises.byId(id), 28),
@@ -166,10 +234,36 @@ export default function Progress() {
                 icon={TrendingUp}
             />
 
+            <div className="flex flex-wrap items-center gap-2">
+                <Chip tone={acwrChip.tone} icon={Activity}>
+                    {acwrChip.label}
+                </Chip>
+                {readinessChip && (
+                    <Chip tone={readinessChip.tone} icon={Activity}>
+                        {readinessChip.label}
+                    </Chip>
+                )}
+                {fatigue.status === 'spike' && !progressionData.deloadRec?.shouldDeload && (
+                    <span className="text-xs text-zinc-500">Escalates a deload if a stall appears.</span>
+                )}
+            </div>
+
+            <DeloadCard recommendation={progressionData.deloadRec} />
+
             {activeId && progressionData.recommendation && (
-                <ProgressionRecommendationCard 
+                <ProgressionRecommendationCard
                     recommendation={progressionData.recommendation}
                     exerciseName={trackedExercises.find(e => e.id === activeId)?.name}
+                    onWhy={progressionData.explanation ? () => setWhyOpen(true) : null}
+                />
+            )}
+
+            {progressionData.explanation && (
+                <SuggestionWhy
+                    open={whyOpen}
+                    onClose={() => setWhyOpen(false)}
+                    explanation={progressionData.explanation}
+                    reason={progressionData.recommendation?.details ?? progressionData.recommendation?.description}
                 />
             )}
 
@@ -177,7 +271,7 @@ export default function Progress() {
             <Card className="space-y-4 glass-card-glow border-accent/20 mesh-border">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-display text-lg font-bold text-white">
-                        Estimated 1RM
+                        {metric === 'e1rm' ? 'Estimated 1RM' : 'Volume per session'}
                     </h2>
                     <div className="flex gap-1.5">
                         <Chip>Epley + Brzycki blend</Chip>
@@ -190,25 +284,46 @@ export default function Progress() {
                     </div>
                 </div>
                 
-                <div className="flex gap-2 border-b border-white/10 pb-3">
-                    {[
-                        { key: '30days', label: '30 days' },
-                        { key: '12weeks', label: '12 weeks' },
-                        { key: 'alltime', label: 'All time' }
-                    ].map(({ key, label }) => (
-                        <button
-                            key={key}
-                            onClick={() => setTimeframe(key)}
-                            className={clsx(
-                                'text-xs font-semibold px-2 py-1 rounded transition-colors',
-                                timeframe === key
-                                    ? 'text-accent border-b-2 border-accent'
-                                    : 'text-zinc-400 hover:text-zinc-300'
-                            )}
-                        >
-                            {label}
-                        </button>
-                    ))}
+                <div className="flex flex-wrap items-center gap-4 border-b border-white/10 pb-3">
+                    <div className="flex gap-1.5">
+                        {[
+                            { key: 'e1rm', label: 'Strength' },
+                            { key: 'volume', label: 'Volume' },
+                        ].map(({ key, label }) => (
+                            <button
+                                key={key}
+                                onClick={() => setMetric(key)}
+                                className={clsx(
+                                    'text-xs font-semibold px-2 py-1 rounded transition-colors',
+                                    metric === key
+                                        ? 'text-accent border-b-2 border-accent'
+                                        : 'text-zinc-400 hover:text-zinc-300'
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex gap-1.5">
+                        {[
+                            { key: '30days', label: '30 days' },
+                            { key: '12weeks', label: '12 weeks' },
+                            { key: 'alltime', label: 'All time' }
+                        ].map(({ key, label }) => (
+                            <button
+                                key={key}
+                                onClick={() => setTimeframe(key)}
+                                className={clsx(
+                                    'text-xs font-semibold px-2 py-1 rounded transition-colors',
+                                    timeframe === key
+                                        ? 'text-accent border-b-2 border-accent'
+                                        : 'text-zinc-400 hover:text-zinc-300'
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
@@ -228,61 +343,74 @@ export default function Progress() {
                         </button>
                     ))}
                 </div>
-                {trend.length < 2 ? (
-                    <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-ink-500">
-                        Log this lift in at least two sessions to draw a trend line.
-                    </p>
-                ) : (
-                    <>
-                        <div className="h-56">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                                    <defs>
-                                        <linearGradient id="purpleFill" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                                            <stop offset="55%" stopColor="#8b5cf6" stopOpacity={0.08} />
-                                            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid stroke="rgba(143,176,207,0.07)" vertical={false} strokeDasharray="3 3" />
-                                    <XAxis
-                                        dataKey="label"
-                                        tick={{ fill: '#55534f', fontSize: 11 }}
-                                        axisLine={false}
-                                        tickLine={false}
-                                    />
-                                    <YAxis
-                                        tick={{ fill: '#55534f', fontSize: 11 }}
-                                        axisLine={false}
-                                        tickLine={false}
-                                        domain={['auto', 'auto']}
-                                    />
-                                    <Tooltip
-                                        contentStyle={{
-                                            backgroundColor: 'rgba(11, 11, 12, 0.88)',
-                                            border: '1px solid rgba(139,92,246,0.2)',
-                                            borderRadius: 12,
-                                            color: '#f7f6f4',
-                                            backdropFilter: 'blur(16px)',
-                                            WebkitBackdropFilter: 'blur(16px)',
-                                            boxShadow: '0 8px 32px 0 rgba(0,0,0,0.55), 0 0 20px -8px rgba(139,92,246,0.15)',
-                                            fontFamily: 'Space Grotesk',
-                                        }}
-                                        formatter={(v) => [`${v} ${unit}`, 'e1RM']}
-                                        cursor={{ stroke: 'rgba(139,92,246,0.3)', strokeWidth: 1 }}
-                                    />
-                                    <Area
-                                        type="monotoneX"
-                                        dataKey="e1rmDisplay"
-                                        stroke="#8b5cf6"
-                                        strokeWidth={3}
-                                        fill="url(#purpleFill)"
-                                        dot={{ fill: '#8b5cf6', strokeWidth: 0, r: 3 }}
-                                        activeDot={{ r: 5, fill: '#8b5cf6', strokeWidth: 2, stroke: 'rgba(139,92,246,0.3)' }}
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
+                {(() => {
+                    const chartData = metric === 'e1rm' ? trend : volumeSeries;
+                    if (chartData.length < 2) {
+                        return (
+                            <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-ink-500">
+                                Log this lift in at least two sessions to draw a trend line.
+                            </p>
+                        );
+                    }
+                    const dataKey = metric === 'e1rm' ? 'e1rmDisplay' : 'volumeDisplay';
+                    const stroke = metric === 'e1rm' ? '#8b5cf6' : '#38bdf8';
+                    const gradientId = metric === 'e1rm' ? 'purpleFill' : 'skyFill';
+                    return (
+                        <>
+                            <div className="h-56">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+                                        <defs>
+                                            <linearGradient id="purpleFill" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.4} />
+                                                <stop offset="55%" stopColor="#8b5cf6" stopOpacity={0.08} />
+                                                <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                                            </linearGradient>
+                                            <linearGradient id="skyFill" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.4} />
+                                                <stop offset="55%" stopColor="#38bdf8" stopOpacity={0.08} />
+                                                <stop offset="100%" stopColor="#38bdf8" stopOpacity={0} />
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid stroke="rgba(143,176,207,0.07)" vertical={false} strokeDasharray="3 3" />
+                                        <XAxis
+                                            dataKey="label"
+                                            tick={{ fill: '#55534f', fontSize: 11 }}
+                                            axisLine={false}
+                                            tickLine={false}
+                                        />
+                                        <YAxis
+                                            tick={{ fill: '#55534f', fontSize: 11 }}
+                                            axisLine={false}
+                                            tickLine={false}
+                                            domain={['auto', 'auto']}
+                                        />
+                                        <Tooltip
+                                            contentStyle={{
+                                                backgroundColor: 'rgba(11, 11, 12, 0.88)',
+                                                border: '1px solid rgba(139,92,246,0.2)',
+                                                borderRadius: 12,
+                                                color: '#f7f6f4',
+                                                backdropFilter: 'blur(16px)',
+                                                WebkitBackdropFilter: 'blur(16px)',
+                                                boxShadow: '0 8px 32px 0 rgba(0,0,0,0.55), 0 0 20px -8px rgba(139,92,246,0.15)',
+                                                fontFamily: 'Space Grotesk',
+                                            }}
+                                            formatter={(v) => [`${v} ${unit}`, metric === 'e1rm' ? 'e1RM' : 'Volume']}
+                                            cursor={{ stroke: 'rgba(139,92,246,0.3)', strokeWidth: 1 }}
+                                        />
+                                        <Area
+                                            type="monotoneX"
+                                            dataKey={dataKey}
+                                            stroke={stroke}
+                                            strokeWidth={3}
+                                            fill={`url(#${gradientId})`}
+                                            dot={{ fill: stroke, strokeWidth: 0, r: 3 }}
+                                            activeDot={{ r: 5, fill: stroke, strokeWidth: 2, stroke: 'rgba(139,92,246,0.3)' }}
+                                        />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
                         
                         {progressionData.analysis && (
                             <div className="grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
@@ -300,8 +428,9 @@ export default function Progress() {
                                 </div>
                             </div>
                         )}
-                    </>
-                )}
+                        </>
+                    );
+                })()}
             </Card>
             </Glass>
 
@@ -362,6 +491,8 @@ export default function Progress() {
                         </p>
                     )}
                 </Card>
+
+                <BodyweightCard />
             </div>
 
             <Card className="space-y-4 mesh-border">

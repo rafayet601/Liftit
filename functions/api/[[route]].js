@@ -855,6 +855,97 @@ app.delete('/workouts/:clientId', async (c) => {
     return c.json({ message: 'Deleted' });
 });
 
+/* ---------- programs ---------- */
+/*
+ * Programs are stored as opaque JSON documents — the client engine owns
+ * their meaning. Same idempotent (user, client_id) upsert contract as
+ * workouts so replaying queued ops is always safe.
+ */
+
+const mapProgramRow = (row) => {
+    let payload = null;
+    try {
+        payload = JSON.parse(row.payload);
+    } catch {
+        payload = null;
+    }
+    return {
+        id: row.client_id,
+        serverId: row.id,
+        isActive: Boolean(row.is_active),
+        payload,
+    };
+};
+
+app.get('/programs', async (c) => {
+    const { user, response } = await requireUser(c);
+    if (response) return response;
+
+    const { results } = await c.env.DB.prepare(
+        `SELECT id, client_id, is_active, payload FROM programs
+         WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?`,
+    )
+        .bind(user.id, LIMITS.programs)
+        .all();
+
+    return c.json({ data: results.map(mapProgramRow) });
+});
+
+app.put('/programs/:clientId', async (c) => {
+    const { user, response } = await requireUser(c);
+    if (response) return response;
+    const gate = await requirePro(c, user.id);
+    if (gate) return gate;
+
+    const clientId = c.req.param('clientId');
+    if (!clientId || clientId.length > LIMITS.clientId) {
+        return c.json({ error: 'Invalid program id' }, 400);
+    }
+    let body;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json({ error: 'Invalid JSON' }, 400);
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return c.json({ error: 'Invalid program payload' }, 400);
+    }
+
+    const payload = JSON.stringify(body).slice(0, LIMITS.programPayload);
+    const name = clampText(body.name, LIMITS.name) ?? 'Program';
+    const isActive = body.isActive ? 1 : 0;
+    const now = Date.now();
+
+    const existing = await c.env.DB.prepare(
+        'SELECT id FROM programs WHERE user_id = ? AND client_id = ?',
+    )
+        .bind(user.id, clientId)
+        .first();
+
+    if (existing) {
+        await c.env.DB.prepare(
+            `UPDATE programs SET name = ?, is_active = ?, payload = ?, updated_at = ?
+             WHERE id = ?`,
+        ).bind(name, isActive, payload, now, existing.id);
+    } else {
+        await c.env.DB.prepare(
+            `INSERT INTO programs (id, user_id, client_id, name, is_active, payload, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(uid(), user.id, clientId, name, isActive, payload, now);
+    }
+
+    return c.json({ data: { id: clientId } });
+});
+
+app.delete('/programs/:clientId', async (c) => {
+    const { user, response } = await requireUser(c);
+    if (response) return response;
+    await c.env.DB.prepare('DELETE FROM programs WHERE user_id = ? AND client_id = ?')
+        .bind(user.id, c.req.param('clientId'))
+        .run();
+    return c.json({ message: 'Deleted' });
+});
+
 app.all('*', (c) => c.json({ error: 'Not found' }, 404));
 
 app.onError((err, c) => {

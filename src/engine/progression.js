@@ -51,12 +51,45 @@ export function suggestNextSession(sessions, targets, options = {}) {
             repsMin,
             repsMax,
             reason: 'No history yet — pick a weight you can lift for the top of the rep range at RPE 7.',
+            explanation: buildExplanation({ rule: 'start_no_history', history: [] }),
         };
     }
 
     const last = summarize(history[0].sets);
     if (!last) {
-        return { action: 'start', weight: null, repsMin, repsMax, reason: 'No working sets logged last time.' };
+        return {
+            action: 'start',
+            weight: null,
+            repsMin,
+            repsMax,
+            reason: 'No working sets logged last time.',
+            explanation: buildExplanation({ rule: 'start_no_working_sets', history }),
+        };
+    }
+
+    // Deltas shared by every branch below, computed once from the real history.
+    const blockAnalysis = analyzeDoubleProgression(history);
+    const sharedExplanation = { history, analysis: blockAnalysis };
+
+    /* Block-level check first: when the double-progression analyzer sees a
+     * multi-week plateau or regression across volume AND intensity, that
+     * outweighs the per-session rule below — pushing weight on a stalled
+     * lift is exactly how plateaus get dug deeper. */
+    const blockDeload = getDeloadRecommendation(blockAnalysis);
+    if (blockDeload.shouldDeload && last.topWeight > 0) {
+        const weight = roundToIncrement(last.topWeight * DELOAD_INTENSITY_REDUCTION, units);
+        return {
+            action: 'deload',
+            weight,
+            repsMin,
+            repsMax,
+            reason: `${blockDeload.reason} Drop to ~${fmt(weight, units)} and rebuild with clean reps.`,
+            explanation: buildExplanation({
+                ...sharedExplanation,
+                rule: blockDeload.plateauWeeks ? 'deload_block_plateau' : 'deload_regression',
+                plateauWeeks: blockDeload.plateauWeeks ?? null,
+            }),
+        };
     }
 
     const stalled =
@@ -73,6 +106,11 @@ export function suggestNextSession(sessions, targets, options = {}) {
             repsMin,
             repsMax,
             reason: `Three sessions stuck at ${fmt(last.topWeight, units)} — back off ~10% and build back up.`,
+            explanation: buildExplanation({
+                ...sharedExplanation,
+                rule: 'deload_stalled_three_sessions',
+                plateauWeeks: weeksBetween(history[2]?.startedAt, history[0]?.startedAt),
+            }),
         };
     }
 
@@ -86,6 +124,7 @@ export function suggestNextSession(sessions, targets, options = {}) {
             repsMin,
             repsMax,
             reason: `You hit ${repsMax}+ reps on every set${last.avgRpe ? ` at RPE ${last.avgRpe.toFixed(1)}` : ''} — add ${fmt(inc, units, true)}.`,
+            explanation: buildExplanation({ ...sharedExplanation, rule: 'increase_top_of_range' }),
         };
     }
 
@@ -97,6 +136,7 @@ export function suggestNextSession(sessions, targets, options = {}) {
             repsMin,
             repsMax,
             reason: `Last session averaged RPE ${last.avgRpe.toFixed(1)} — take a small step back to keep quality high.`,
+            explanation: buildExplanation({ ...sharedExplanation, rule: 'reduce_high_rpe' }),
         };
     }
 
@@ -106,7 +146,64 @@ export function suggestNextSession(sessions, targets, options = {}) {
         repsMin,
         repsMax,
         reason: `Hold ${fmt(last.topWeight, units)} and push for ${Math.min(last.minReps + 1, repsMax)}+ reps per set.`,
+        explanation: buildExplanation({ ...sharedExplanation, rule: 'hold_double_progression' }),
     };
+}
+
+/**
+ * Audit trail attached to every suggestNextSession result. Every value is
+ * computed from the sessions the engine actually looked at — the UI shows
+ * these numbers verbatim and invents nothing.
+ *
+ * Shape: { rule, sessionsAnalyzed: [{date, topWeight, topReps, avgRpe}],
+ *          volumeDeltaPct, intensityDeltaPct, plateauWindowWeeks }
+ */
+function buildExplanation({ rule, history, analysis, plateauWeeks = null }) {
+    const sessionsAnalyzed = (history || []).slice(0, 4).map((s) => {
+        const sum = summarize(s.sets);
+        return {
+            date: s.startedAt ? String(s.startedAt).slice(0, 10) : null,
+            topWeight: sum ? sum.topWeight : null,
+            topReps: sum ? sum.minReps : null,
+            avgRpe: sum && sum.avgRpe != null ? Math.round(sum.avgRpe * 10) / 10 : null,
+        };
+    });
+    const pct = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+    return {
+        rule,
+        sessionsAnalyzed,
+        volumeDeltaPct: history?.length >= 2 ? pct(analysis?.volumeProgressionPercent) : null,
+        intensityDeltaPct: history?.length >= 2 ? pct(analysis?.intensityProgressionPercent) : null,
+        plateauWindowWeeks: plateauWeeks,
+    };
+}
+
+/** Whole-week span between two ISO timestamps, in weeks (1 decimal); null when unparseable. */
+function weeksBetween(older, newer) {
+    const ms = new Date(newer).getTime() - new Date(older).getTime();
+    if (!Number.isFinite(ms)) return null;
+    return Math.round((ms / (7 * DAY_MS)) * 10) / 10;
+}
+
+/**
+ * Explanation for the block-level recommendation shown on Progress:
+ * same audit fields, derived from the same analyzer the recommendation used.
+ */
+export function explainProgression(sessions) {
+    const history = (sessions || []).filter((s) => s.sets?.length);
+    const analysis = analyzeDoubleProgression(history);
+    const deloadRec = getDeloadRecommendation(analysis);
+    const rule = deloadRec.shouldDeload
+        ? deloadRec.plateauWeeks
+            ? 'deload_block_plateau'
+            : 'deload_regression'
+        : `trend_${analysis.trend}`;
+    return buildExplanation({
+        rule,
+        history,
+        analysis,
+        plateauWeeks: deloadRec.plateauWeeks ?? null,
+    });
 }
 
 function summarize(sets) {
@@ -191,7 +288,8 @@ export function analyzeDoubleProgression(sessions) {
 
     const first = metrics[0];
     const recent = metrics[metrics.length - 1];
-    const weeksDiff = (new Date(recent.date) - new Date(first.date)) / (7 * DAY_MS);
+    const spanMs = new Date(recent.date).getTime() - new Date(first.date).getTime();
+    const weeksDiff = Number.isFinite(spanMs) ? spanMs / (7 * DAY_MS) : 0;
     const weeksAnalyzed = Math.max(1, weeksDiff);
 
     const volumeProgression = ((recent.volumePerSet - first.volumePerSet) / first.volumePerSet) * 100;

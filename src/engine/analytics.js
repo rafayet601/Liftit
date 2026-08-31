@@ -4,6 +4,8 @@
  */
 
 import { estimate1RM, bestSet, detectPRs } from './e1rm';
+import { acwr } from './fatigue';
+import { currentProgramWeek } from './generator';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -163,4 +165,124 @@ export function recentExerciseIds(workouts, limit = 12) {
         }
     }
     return seen;
+}
+
+/** Per-session volume for one exercise: [{ date, volume }] oldest first. */
+export function volumeTrend(workouts, exerciseId, limit = 30) {
+    const points = [];
+    for (const w of workouts) {
+        const sets = (w.sets || []).filter(
+            (s) => s.exerciseId === exerciseId && !s.isWarmup && s.reps > 0 && s.weight > 0,
+        );
+        if (sets.length) {
+            points.push({
+                date: w.startedAt.slice(0, 10),
+                volume: Math.round(sets.reduce((sum, s) => sum + s.weight * s.reps, 0)),
+            });
+        }
+    }
+    return points.reverse().slice(-limit);
+}
+
+/**
+ * A grounded weekly volume target, never fabricated:
+ * - With an active program: your average volume per working set (last 28
+ *   days) × the working sets the program schedules per week.
+ * - Without a program: match last week's volume (maintain).
+ * Returns 0 when there isn't enough data to justify a target.
+ */
+export function weeklyVolumeTarget(workouts, program, resolveExercise, now = new Date()) {
+    const t = now.getTime();
+
+    if (program) {
+        let recentVolume = 0;
+        let recentSets = 0;
+        for (const w of workouts) {
+            const age = t - new Date(w.startedAt).getTime();
+            if (age < 0 || age > 28 * DAY_MS) continue;
+            for (const s of workingSets(w)) {
+                recentVolume += s.weight * s.reps;
+                recentSets += 1;
+            }
+        }
+        const plannedSets = program.days
+            .filter((d) => !d.isRestDay)
+            .reduce((sum, d) => sum + (d.exercises || []).reduce((n, e) => n + (e.targetSets || 0), 0), 0);
+        if (!recentSets || !plannedSets) return 0;
+        return Math.round((recentVolume / recentSets) * plannedSets);
+    }
+
+    const { previous } = weeklyVolumeComparison(workouts, now);
+    return previous > 0 ? previous : 0;
+}
+
+/**
+ * Weekly digest — every field derived from real logs (or honestly empty).
+ * Returns: { volumeCmp, volumeDeltaPct, prCount, sessions, acwrStatus,
+ *            programWeek, message }.
+ * `message` is assembled only from the computed values in this object.
+ */
+export function weeklyDigest(workouts, program, now = new Date()) {
+    const t = now.getTime();
+    const volumeCmp = weeklyVolumeComparison(workouts, now);
+    const volumeDeltaPct =
+        volumeCmp.previous > 0
+            ? Math.round(((volumeCmp.current - volumeCmp.previous) / volumeCmp.previous) * 1000) / 10
+            : null;
+
+    const weekAgo = t - 7 * DAY_MS;
+    const sessions = workouts.filter((w) => {
+        const ts = new Date(w.startedAt).getTime();
+        return ts >= weekAgo && ts <= t;
+    }).length;
+
+    // PR events whose workout fell in the trailing 7 days. prTimeline returns
+    // newest-first with a cap — scan enough events to cover the window.
+    const prEvents = prTimeline(workouts, Math.max(20, workouts.length));
+    const prCount = prEvents.filter((e) => new Date(e.date).getTime() >= weekAgo).length;
+
+    const fatigueStatus = acwr(workouts, now).status;
+
+    let weekLabel = null;
+    if (program) {
+        weekLabel = `program week ${currentProgramWeek(program, now)} of ${program.durationWeeks}`;
+    }
+
+    const parts = [];
+    if (!workouts.length) {
+        parts.push('No sessions logged yet — your digest starts once you train.');
+    } else if (sessions === 0) {
+        parts.push('No sessions in the last 7 days.');
+    } else {
+        parts.push(`${sessions} session${sessions === 1 ? '' : 's'} this week`);
+    }
+    if (sessions > 0 || volumeCmp.current > 0) {
+        parts.push(
+            volumeDeltaPct === null
+                ? `${Math.round(volumeCmp.current).toLocaleString()} kg volume this week (no prior week to compare)`
+                : `volume ${volumeDeltaPct >= 0 ? '+' : ''}${volumeDeltaPct}% vs last week`,
+        );
+    }
+    if (workouts.length) {
+        parts.push(prCount > 0 ? `${prCount} PR${prCount === 1 ? '' : 's'}` : 'no new PRs');
+    }
+    if (weekLabel) parts.push(weekLabel);
+
+    const acwrLabels = {
+        spike: 'load spike',
+        detrend: 'load taper',
+        balanced: 'balanced load',
+        insufficient_data: 'building load history',
+    };
+    if (workouts.length) parts.push(acwrLabels[fatigueStatus]);
+
+    return {
+        volumeCmp,
+        volumeDeltaPct,
+        prCount,
+        sessions,
+        acwrStatus: fatigueStatus,
+        programWeek: weekLabel,
+        message: parts.join(' · '),
+    };
 }

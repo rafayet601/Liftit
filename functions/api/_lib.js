@@ -49,6 +49,11 @@ export const LIMITS = {
     clientId: 100,
     sets: 500,
     workouts: 500,
+    programs: 50,
+    // A serialized program document (days × exercises targets). A few tens of
+    // KB covers any legitimate program; clamping here keeps hostile payloads
+    // from writing megabytes of JSON per row.
+    programPayload: 100000,
 };
 
 export const PLANS = {

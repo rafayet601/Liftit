@@ -13,8 +13,8 @@ import {
     Clock,
     Coffee,
     Sparkles,
-} from 'lucide-react';
-import clsx from 'clsx';
+    Edit3,
+} from 'lucide-react';import clsx from 'clsx';
 import { db } from '../data/db';
 import { useWorkouts, useActiveProgram } from '../data/DataProvider';
 import { useUnit } from '../contexts/UnitContext';
@@ -24,6 +24,7 @@ import {
     updateSession,
     discardSession,
     makeSessionExercise,
+    getActiveSession,
 } from '../hooks/useActiveSession';
 import { suggestNextSession, sessionsForExercise } from '../engine/progression';
 import { currentProgramWeek, scaleTargetsForWeek, phaseForWeek } from '../engine/generator';
@@ -32,12 +33,15 @@ import { workoutVolume } from '../engine/analytics';
 import ExercisePicker from '../components/workout/ExercisePicker';
 import RestTimer from '../components/workout/RestTimer';
 import SetRow from '../components/workout/SetRow';
+import { computePlates, formatPlates } from '../components/workout/PlateCalculator';
+import SuggestionWhy, { WhyButton } from '../components/workout/SuggestionWhy';
 import { Card, Chip, EmptyState, PageHeader, ProgressBar, Sheet } from '../components/ui/Primitives';
 import Glass from '../components/ui/Glass';
 import LinearGradient from '../components/ui/LinearGradient';
 import WaveDistortion from '../components/ui/WaveDistortion';
 import { useToast } from '../components/ui/Toast';
 import { hapticMedium, hapticSuccess } from '../lib/platform';
+import { pushWatchContext, compactSessionSnapshot } from '../lib/watchBridge';
 
 export default function Workout() {
     const { session } = useActiveSession();
@@ -238,6 +242,17 @@ function ActiveSession() {
     const [confirmDiscard, setConfirmDiscard] = useState(false);
     const [summary, setSummary] = useState(null);
 
+    /* ---------- watch bridge ---------- */
+    // Mirror the session onto the Apple Watch (latest-value-wins). Cleared
+    // once the session is gone (finish/discard) so the watch never logs into
+    // a session that no longer exists.
+    useEffect(() => {
+        pushWatchContext(compactSessionSnapshot(session));
+        return () => {
+            if (!getActiveSession()) pushWatchContext(null);
+        };
+    }, [session]);
+
     const completedSets = session.exercises.reduce(
         (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
         0,
@@ -315,6 +330,7 @@ function ActiveSession() {
                     weight: s.weight,
                     reps: s.reps,
                     rpe: s.rpe,
+                    isWarmup: Boolean(s.isWarmup),
                     completedAt: new Date().toISOString(),
                 });
             }
@@ -348,6 +364,7 @@ function ActiveSession() {
             startedAt: session.startedAt,
             completedAt: new Date().toISOString(),
             durationSec,
+            notes: session.notes?.trim() || '',
             sets,
         });
 
@@ -394,6 +411,29 @@ function ActiveSession() {
                     {completedSets}/{totalSets} sets
                 </span>
             </div>
+
+            {/* Session notes */}
+            <details className="group rounded-2xl border border-white/[0.07] bg-white/[0.02]">
+                <summary className="flex cursor-pointer select-none items-center gap-2 px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-ink-500 transition-colors hover:text-ink-300 [&::-webkit-details-marker]:hidden">
+                    <Edit3 className="h-3.5 w-3.5" />
+                    {session.notes?.trim() ? 'Notes' : 'Add notes'}
+                    {session.notes?.trim() && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" />
+                    )}
+                </summary>
+                <textarea
+                    value={session.notes ?? ''}
+                    onChange={(e) =>
+                        updateSession((d) => {
+                            d.notes = e.target.value;
+                        })
+                    }
+                    rows={3}
+                    maxLength={2000}
+                    placeholder="How did it feel? Bar speed, aches, cues that clicked…"
+                    className="w-full resize-none bg-transparent px-4 pb-3 text-sm text-ink-200 placeholder:text-ink-600 focus:outline-none"
+                />
+            </details>
 
             {/* Exercises */}
             <div className="space-y-3">
@@ -490,6 +530,7 @@ const ExerciseCard = React.memo(function ExerciseCard({
     displayWeight,
 }) {
     const exercise = db.exercises.byId(entry.exerciseId);
+    const [whyOpen, setWhyOpen] = useState(false);
     const previous = useMemo(
         () => sessionsForExercise(workouts, entry.exerciseId, 1)[0] ?? null,
         [workouts, entry.exerciseId],
@@ -503,6 +544,12 @@ const ExerciseCard = React.memo(function ExerciseCard({
             ),
         [workouts, entry, unit, exercise],
     );
+
+    const plates = useMemo(() => {
+        if (!suggestion.weight) return null;
+        const result = computePlates(suggestion.weight, unit);
+        return result.feasible ? formatPlates(result.perSide) : null;
+    }, [suggestion.weight, unit]);
 
     const done = entry.sets.filter((s) => s.completed).length;
     const isDone = done === entry.sets.length && done > 0;
@@ -558,15 +605,31 @@ const ExerciseCard = React.memo(function ExerciseCard({
                     {suggestion.action !== 'start' && (
                         <div className="flex items-start gap-2 rounded-xl border border-accent/15 bg-accent/[0.06] px-3 py-2.5">
                             <Flame className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                            <p className="text-xs leading-relaxed text-ink-300">
+                            <p className="flex-1 text-xs leading-relaxed text-ink-300">
                                 {suggestion.weight ? (
                                     <strong className="text-white">
                                         {displayWeight(suggestion.weight)} {unit} ·{' '}
                                     </strong>
                                 ) : null}
                                 {suggestion.reason}
+                                {plates && (
+                                    <span className="mt-1 block text-[10px] font-bold uppercase tracking-widest text-ink-500">
+                                        Load {plates}
+                                    </span>
+                                )}
                             </p>
+                            {suggestion.explanation && (
+                                <WhyButton onClick={() => setWhyOpen(true)} className="-mr-1 -mt-0.5" />
+                            )}
                         </div>
+                    )}
+                    {suggestion.explanation && (
+                        <SuggestionWhy
+                            open={whyOpen}
+                            onClose={() => setWhyOpen(false)}
+                            explanation={suggestion.explanation}
+                            reason={suggestion.reason}
+                        />
                     )}
 
                     {entry.sets.map((set, setIdx) => (

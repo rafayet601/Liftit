@@ -14,8 +14,10 @@ import {
     SCHEMA_VERSION,
     createDocument,
     createWorkout,
+    createSet,
     createProgram,
     createSettings,
+    createBodyweightEntry,
     uid,
 } from './schema';
 import {
@@ -24,6 +26,9 @@ import {
     matchExerciseByName,
     searchLibrary,
 } from './exercises';
+// Importer core is pure (no db import) — parsing/matching live there,
+// document mutation and custom-exercise creation live here.
+import { resolveSourceName, contentHash } from './importers/core';
 import { getItem, setItem, removeItem, __resetForTest as resetStorage } from './storage';
 
 const STORAGE_KEY = 'liftit_data_v2';
@@ -42,7 +47,10 @@ function load() {
     try {
         const raw = getItem(STORAGE_KEY);
         if (raw) {
-            doc = createDocument(JSON.parse(raw));
+            const parsed = JSON.parse(raw);
+            const needsMigration = parsed.version !== SCHEMA_VERSION;
+            doc = createDocument(parsed);
+            if (needsMigration) persist(); // write the upgraded v3 doc back
             return doc;
         }
     } catch (e) {
@@ -211,6 +219,169 @@ function enqueue(type, payload) {
 }
 
 /* ------------------------------------------------------------------ */
+/* CSV import (Strong / Hevy / FitNotes) — preview → commit            */
+/*                                                                     */
+/* Workout identity for collisions is the LOCAL calendar date          */
+/* (`YYYY-MM-DD`), nothing else — safe for sources that export date    */
+/* only. Preview never mutates the document; commit is the only place  */
+/* unmatched names become custom exercises (never dropped) and the     */
+/* only place workouts are written. No sync ops are enqueued: bulk     */
+/* history imports follow the importRemote()/v1-migration precedent    */
+/* of local-first writes that the sync layer reconciles later.         */
+/* ------------------------------------------------------------------ */
+
+function localDateKey(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function existingImportDates() {
+    return new Set(load().workouts.map((w) => localDateKey(w.startedAt)).filter(Boolean));
+}
+
+/** Honest preview counts: nothing here touches the document. */
+function previewImport(parsedWorkouts, { collision = 'skip' } = {}) {
+    const canonical = (Array.isArray(parsedWorkouts) ? parsedWorkouts : []).filter(Boolean);
+    const existing = existingImportDates();
+
+    const matchedNames = [];
+    const unmatchedNames = [];
+    const seen = new Set();
+    for (const w of canonical) {
+        for (const ex of w.exercises ?? []) {
+            const name = ex?.sourceName;
+            if (!name || seen.has(name)) continue;
+            seen.add(name);
+            const hit = resolveSourceName(name);
+            if (hit) matchedNames.push({ sourceName: name, id: hit.id, name: hit.name });
+            else unmatchedNames.push(name);
+        }
+    }
+
+    const items = canonical.map((w) => {
+        const exercises = w.exercises ?? [];
+        const names = exercises.map((e) => e?.sourceName).filter(Boolean);
+        const dateExists = existing.has(w.date);
+        return {
+            date: w.date,
+            name: w.name,
+            setCount: exercises.reduce((n, e) => n + (e.sets?.length ?? 0), 0),
+            exerciseCount: exercises.length,
+            matchedCount: names.filter((n) => !unmatchedNames.includes(n)).length,
+            unmatchedNames: [...new Set(names.filter((n) => unmatchedNames.includes(n)))],
+            contentHash: contentHash(w),
+            dateExists,
+            // What commit will do with this workout under the chosen policy.
+            action: dateExists ? collision : 'import',
+        };
+    });
+
+    return {
+        source: canonical[0]?.source ?? null,
+        workoutCount: items.length,
+        setCount: items.reduce((n, i) => n + i.setCount, 0),
+        matchedNames,
+        unmatchedNames,
+        items,
+        willImport: items.filter((i) => !i.dateExists).length,
+        willSkip: items.filter((i) => i.dateExists && collision === 'skip').length,
+        willReplace: items.filter((i) => i.dateExists && collision === 'replace').length,
+    };
+}
+
+/** The write path. Preview-before-commit is enforced by the UI flow. */
+function commitImport(parsedWorkouts, { collision = 'skip' } = {}) {
+    const canonical = (Array.isArray(parsedWorkouts) ? parsedWorkouts : []).filter(Boolean);
+    const existingDates = existingImportDates();
+
+    // Resolve every unique source name up front. Unmatched ones become
+    // custom exercises via db.exercises.addCustom — the existing pattern —
+    // deduped case-insensitively so re-imports don't spawn copies.
+    const idBySource = new Map();
+    const createdCustomExercises = [];
+    for (const w of canonical) {
+        for (const ex of w.exercises ?? []) {
+            const name = ex?.sourceName;
+            if (!name || idBySource.has(name)) continue;
+            const hit = resolveSourceName(name);
+            let id = hit?.id ?? null;
+            if (!id) {
+                const existingCustom = load().customExercises.find(
+                    (c) => c.name.toLowerCase() === String(name).toLowerCase(),
+                );
+                if (existingCustom) id = existingCustom.id;
+                else {
+                    const custom = db.exercises.addCustom({ name });
+                    createdCustomExercises.push(custom.name);
+                    id = custom.id;
+                }
+            }
+            idBySource.set(name, id);
+        }
+    }
+
+    const toRemove = new Set();
+    const fresh = [];
+    let skipped = 0;
+    let replaced = 0;
+    for (const w of canonical) {
+        if (!w?.date || !Array.isArray(w.exercises)) {
+            skipped += 1;
+            continue;
+        }
+        if (existingDates.has(w.date)) {
+            // Collision policy operates per-date: skip (default — never
+            // clobber logged sets) or replace (drop the existing workout,
+            // insert the imported one). No bulk-replace.
+            if (collision !== 'replace') {
+                skipped += 1;
+                continue;
+            }
+            replaced += 1;
+            for (const existing of load().workouts) {
+                if (localDateKey(existing.startedAt) === w.date) toRemove.add(existing.id);
+            }
+        }
+        const startedAt = w.startedAt ?? new Date(`${w.date}T12:00:00`).toISOString();
+        const sets = (w.exercises ?? []).flatMap((ex) => {
+            const exerciseId = idBySource.get(ex.sourceName) ?? null;
+            return (ex.sets ?? []).map((s) => createSet({
+                exerciseId,
+                setNumber: s.setNumber,
+                weight: s.weight, // already kg at the adapter edge
+                reps: s.reps,
+                rpe: s.rpe, // null → 0 via numberOr inside createSet
+                isWarmup: s.isWarmup,
+                completedAt: w.endedAt ?? startedAt,
+            }));
+        });
+        fresh.push(createWorkout({
+            name: w.name || 'Workout',
+            startedAt,
+            completedAt: w.endedAt ?? startedAt,
+            durationSec: w.durationSec ?? 0,
+            notes: w.notes ?? '',
+            sets,
+        }));
+    }
+
+    commit((d) => {
+        if (toRemove.size) d.workouts = d.workouts.filter((x) => !toRemove.has(x.id));
+        d.workouts.push(...fresh);
+    });
+
+    return {
+        imported: fresh.length,
+        skipped,
+        replaced,
+        removedWorkouts: toRemove.size,
+        createdCustomExercises,
+        setCount: fresh.reduce((n, w) => n + w.sets.length, 0),
+    };
+}
+
+/* ------------------------------------------------------------------ */
 /* Public repository                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -270,6 +441,19 @@ export const db = {
         },
     },
 
+    /**
+     * CSV import pipeline (Strong / Hevy / FitNotes adapters feed this).
+     * Two-step by contract: preview() reports honest counts for the
+     * confirmation screen and never mutates; commit() applies the
+     * collision policy (skip default / replace per duplicate date).
+     */
+    importers: {
+        /** Local calendar dates (`YYYY-MM-DD`) already in the document. */
+        existingDates: existingImportDates,
+        preview: previewImport,
+        commit: commitImport,
+    },
+
     programs: {
         list() {
             return [...load().programs].sort(
@@ -310,12 +494,43 @@ export const db = {
             });
             enqueue('program.delete', { id });
         },
+        /**
+         * Merge programs pulled down from the server. Add-only (local wins)
+         * like workouts — but unlike workouts there is a cross-device state
+         * change worth honoring: which program is active. The imported
+         * active program wins, and everything else is deactivated, so
+         * "switch programs on my phone" propagates to this device.
+         */
+        importRemote(programs) {
+            const seen = new Set(load().programs.map((p) => p.id));
+            const fresh = (programs ?? [])
+                .filter((p) => p?.id && p?.payload && !seen.has(p.id))
+                .map((p) => createProgram(p.payload));
+            if (!fresh.length) return 0;
+            commit((d) => {
+                const incomingActive = fresh.find((p) => p.isActive);
+                if (incomingActive) {
+                    d.programs.forEach((p) => {
+                        p.isActive = false;
+                    });
+                } else {
+                    // Keep local active state; imported copies must not
+                    // double-activate alongside it.
+                    fresh.forEach((p) => {
+                        p.isActive = false;
+                    });
+                }
+                d.programs.push(...fresh);
+            });
+            return fresh.length;
+        },
     },
 
-    exercises: {
+        exercises: {
         all() {
             return [...EXERCISE_LIBRARY, ...load().customExercises];
         },
+
         byId(id) {
             return (
                 getLibraryExercise(id) ??
@@ -346,6 +561,38 @@ export const db = {
                 d.customExercises.push(exercise);
             });
             return exercise;
+        },
+    },
+
+    /**
+     * Bodyweight entries stay local-only (no server table yet): like
+     * customExercises they never enqueue sync ops. Weight arrives in KG —
+     * conversion from the user's display unit happens at the edge
+     * (UnitContext.toKg) before it reaches the repository.
+     */
+    bodyweight: {
+        /** Newest first. */
+        list() {
+            return [...load().bodyweightEntries].sort(
+                (a, b) => new Date(b.date) - new Date(a.date),
+            );
+        },
+        add({ date, weightKg, source = 'manual' }) {
+            const entry = createBodyweightEntry({
+                id: uid('bw'),
+                date: date ?? new Date().toISOString(),
+                weightKg,
+                source,
+            });
+            commit((d) => {
+                d.bodyweightEntries.push(entry);
+            });
+            return entry;
+        },
+        remove(id) {
+            commit((d) => {
+                d.bodyweightEntries = d.bodyweightEntries.filter((e) => e.id !== id);
+            });
         },
     },
 
@@ -400,7 +647,10 @@ export const db = {
 
     import(json) {
         const parsed = JSON.parse(json); // throws on invalid input — caller handles
-        if (parsed.version !== SCHEMA_VERSION) {
+        // Version 2 backups must stay importable forever: the v2→v3 bump only
+        // added the bodyweightEntries collection and settings.recovery, both
+        // of which createDocument fills with defaults during normalization.
+        if (parsed.version !== SCHEMA_VERSION && parsed.version !== 2) {
             throw new Error(`Unsupported backup version: ${parsed.version}`);
         }
         // SECURITY: never let a backup file dictate AI provider config. A

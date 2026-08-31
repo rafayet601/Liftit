@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
     Settings as SettingsIcon,
@@ -8,6 +8,7 @@ import {
     Database,
     Download,
     Upload,
+    FileUp,
     Trash2,
     LogOut,
     LogIn,
@@ -15,6 +16,9 @@ import {
     ShieldCheck,
 } from 'lucide-react';
 import { db } from '../data/db';
+import { parseStrongCsv } from '../data/importers/strong';
+import { parseHevyCsv } from '../data/importers/hevy';
+import { parseFitNotesCsv } from '../data/importers/fitnotes';
 import { backendAvailable } from '../lib/api';
 import { isNative } from '../lib/platform';
 import { startCheckout, openBillingPortal } from '../services/billing.service';
@@ -252,6 +256,9 @@ export default function SettingsPage() {
                 )}
             </Card>
 
+            {/* Migrate from Strong / Hevy / FitNotes — preview → commit */}
+            <ImporterCard />
+
             {confirmWipe && (
                 <Sheet open title="Erase all data?" onClose={() => setConfirmWipe(false)}>
                     <p className="text-sm text-ink-400">
@@ -277,6 +284,296 @@ export default function SettingsPage() {
                 </Sheet>
             )}
         </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/* Migrate from Strong / Hevy / FitNotes — pick → preview → commit      */
+/*                                                                     */
+/* The three steps map onto the collision policy: (1) pick the source  */
+/* + unit mode (Strong is unitless, so auto applies the ≥30%-of-       */
+/* barbell-sets-≥90 heuristic; the header variants override it) and     */
+/* the duplicate-date policy (skip default — never clobber logged      */
+/* sets); (2) the preview shows honest counts incl. what will be       */
+/* skipped/replaced and which unknown exercises become custom;         */
+/* (3) commit runs exactly what the preview showed — no silent merges. */
+/* ------------------------------------------------------------------ */
+const IMPORT_SOURCES = [
+    { value: 'strong', label: 'Strong' },
+    { value: 'hevy', label: 'Hevy' },
+    { value: 'fitnotes', label: 'FitNotes' },
+];
+
+const ACTION_LABELS = {
+    import: { label: 'Import new', tone: 'success' },
+    skip: { label: 'Skip (date exists)', tone: 'warning' },
+    replace: { label: 'Replace existing', tone: 'danger' },
+};
+
+function ImporterCard() {
+    const { showToast } = useToast();
+    const fileRef = useRef(null);
+    const [source, setSource] = useState('strong');
+    const [unitMode, setUnitMode] = useState('auto'); // Strong only
+    const [collision, setCollision] = useState('skip');
+    const [rawText, setRawText] = useState('');
+    const [parsedFile, setParsedFile] = useState(null); // { fileName, parsed }
+    const [result, setResult] = useState(null);
+    const [error, setError] = useState('');
+
+    const runParse = (text, src, um) => {
+        setResult(null);
+        setError('');
+        try {
+            let parsed;
+            if (src === 'strong') parsed = parseStrongCsv(text, { unitMode: um });
+            else if (src === 'hevy') parsed = parseHevyCsv(text);
+            else parsed = parseFitNotesCsv(text);
+            if (!parsed.ok) {
+                setParsedFile(null);
+                setRawText('');
+                setError(parsed.error);
+                return;
+            }
+            setParsedFile({ fileName: null, parsed });
+        } catch (err) {
+            setParsedFile(null);
+            setRawText('');
+            setError(`Could not read the file: ${err.message}`);
+        }
+    };
+
+    const onFile = async (file) => {
+        if (!file) return;
+        const text = await file.text();
+        setRawText(text);
+        runParse(text, source, unitMode);
+    };
+
+    const pickSource = (src) => {
+        setSource(src);
+        setParsedFile(null);
+        setRawText('');
+        setResult(null);
+        setError('');
+    };
+
+    const pickUnitMode = (um) => {
+        setUnitMode(um);
+        if (rawText) runParse(rawText, source, um); // re-resolve units honestly
+    };
+
+    // Recomputed whenever the collision policy changes so the preview
+    // always describes exactly what commit will do.
+    const preview = useMemo(() => {
+        if (!parsedFile?.parsed) return null;
+        return db.importers.preview(parsedFile.parsed.workouts, { collision });
+    }, [parsedFile, collision]);
+
+    const commit = () => {
+        if (!parsedFile?.parsed) return;
+        const r = db.importers.commit(parsedFile.parsed.workouts, { collision });
+        setResult(r);
+        setParsedFile(null);
+        setRawText('');
+        showToast(`Imported ${r.imported} workout${r.imported === 1 ? '' : 's'}.`, 'success');
+    };
+
+    const reset = () => {
+        setParsedFile(null);
+        setRawText('');
+        setResult(null);
+        setError('');
+    };
+
+    return (
+        <Card className="space-y-4">
+            <SectionHead icon={FileUp} title="Import from Strong / Hevy / FitNotes" />
+            <p className="text-sm text-ink-400">
+                Bring your history from another tracker. Everything stays on this device; you see a
+                full preview before anything is written.
+            </p>
+
+            <div>
+                <div className="eyebrow mb-2">Exported from</div>
+                <Segmented
+                    className="max-w-md"
+                    value={source}
+                    onChange={pickSource}
+                    options={IMPORT_SOURCES}
+                />
+            </div>
+
+            {source === 'strong' && (
+                <div>
+                    <div className="eyebrow mb-2">Weight units in the file</div>
+                    <Segmented
+                        className="max-w-md"
+                        value={unitMode}
+                        onChange={pickUnitMode}
+                        options={[
+                            { value: 'auto', label: 'Detect' },
+                            { value: 'kg', label: 'Kilos' },
+                            { value: 'lbs', label: 'LB' },
+                        ]}
+                    />
+                    <p className="mt-2 text-xs text-ink-500">
+                        Strong CSVs don't say which unit they use. Detect reads a unit-suffixed
+                        weight column if present, else assumes lbs when ≥30% of barbell sets are
+                        90+.
+                    </p>
+                </div>
+            )}
+
+            <div>
+                <div className="eyebrow mb-2">If a date already exists in Liftit</div>
+                <Segmented
+                    className="max-w-md"
+                    value={collision}
+                    onChange={setCollision}
+                    options={[
+                        { value: 'skip', label: 'Keep mine' },
+                        { value: 'replace', label: 'Replace' },
+                    ]}
+                />
+                <p className="mt-2 text-xs text-ink-500">
+                    “Keep mine” never overwrites logged sets — those dates are skipped. “Replace”
+                    deletes this device's workout for a colliding date and inserts the imported one.
+                </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+                <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={Boolean(parsedFile)}
+                >
+                    <Upload className="h-4 w-4" /> Choose CSV…
+                </button>
+                <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        onFile(f);
+                        e.target.value = '';
+                    }}
+                />
+            </div>
+
+            {error && (
+                <p className="text-sm text-red-400">
+                    {error}
+                </p>
+            )}
+
+            {preview && parsedFile?.parsed && (
+                <div className="space-y-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Chip tone="accent">
+                            {preview.workoutCount} workout{preview.workoutCount === 1 ? '' : 's'}
+                        </Chip>
+                        <Chip tone="steel">{preview.setCount} sets</Chip>
+                        <Chip tone={preview.unmatchedNames.length ? 'warning' : 'success'}>
+                            {preview.matchedNames.length} matched exercise
+                            {preview.matchedNames.length === 1 ? '' : 's'}
+                        </Chip>
+                        {preview.unmatchedNames.length > 0 && (
+                            <Chip tone="warning">
+                                {preview.unmatchedNames.length} new custom exercise
+                                {preview.unmatchedNames.length === 1 ? '' : 's'}
+                            </Chip>
+                        )}
+                        <Chip>{parsedFile.parsed.unitReason}</Chip>
+                    </div>
+
+                    {preview.unmatchedNames.length > 0 && (
+                        <div className="text-xs text-ink-400">
+                            <span className="eyebrow">Will be added as custom exercises</span>
+                            <p className="mt-1 break-words">
+                                {preview.unmatchedNames.join(' · ')}
+                            </p>
+                        </div>
+                    )}
+
+                    {parsedFile.parsed.stats.warnings.length > 0 && (
+                        <ul className="list-inside list-disc space-y-1 text-xs text-amber-300/90">
+                            {parsedFile.parsed.stats.warnings.map((w) => (
+                                <li key={w}>{w}</li>
+                            ))}
+                        </ul>
+                    )}
+
+                    <div className="max-h-56 space-y-1 overflow-y-auto text-xs">
+                        {preview.items.map((item) => {
+                            const meta = ACTION_LABELS[item.action] ?? ACTION_LABELS.import;
+                            return (
+                                <div
+                                    key={`${item.date}-${item.contentHash}`}
+                                    className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2"
+                                >
+                                    <span className="min-w-0 truncate text-white">
+                                        <span className="tabular-nums text-ink-400">{item.date}</span>
+                                        {' · '}
+                                        {item.name}
+                                        {' · '}
+                                        {item.setCount} sets
+                                    </span>
+                                    <Chip tone={meta.tone}>{meta.label}</Chip>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                        <button type="button" className="btn-primary flex-1" onClick={commit}>
+                            Import {preview.willImport + preview.willReplace} workout
+                            {preview.willImport + preview.willReplace === 1 ? '' : 's'}
+                        </button>
+                        <button type="button" className="btn-ghost flex-1" onClick={reset}>
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {result && (
+                <div className="space-y-1 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 text-sm">
+                    <p className="font-semibold text-white">
+                        Imported {result.imported} workout{result.imported === 1 ? '' : 's'}
+                        {' '}({result.setCount} sets).
+                    </p>
+                    {result.skipped > 0 && (
+                        <p className="text-xs text-ink-400">
+                            {result.skipped} workout{result.skipped === 1 ? '' : 's'} skipped — a
+                            workout already existed on that date.
+                        </p>
+                    )}
+                    {result.removedWorkouts > 0 && (
+                        <p className="text-xs text-ink-400">
+                            {result.removedWorkouts} existing workout
+                            {result.removedWorkouts === 1 ? '' : 's'} replaced.
+                        </p>
+                    )}
+                    {result.createdCustomExercises.length > 0 && (
+                        <p className="text-xs text-ink-400">
+                            {result.createdCustomExercises.length} new custom exercise
+                            {result.createdCustomExercises.length === 1 ? '' : 's'}:{' '}
+                            {result.createdCustomExercises.join(' · ')}
+                        </p>
+                    )}
+                    {result.imported === 0 && (
+                        <p className="text-xs text-amber-300/90">
+                            Nothing was written — every workout in the file collided with an
+                            existing date under “Keep mine”.
+                        </p>
+                    )}
+                </div>
+            )}
+        </Card>
     );
 }
 

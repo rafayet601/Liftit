@@ -56,6 +56,24 @@ CREATE TABLE IF NOT EXISTS workout_sets (
 
 CREATE INDEX IF NOT EXISTS idx_sets_workout ON workout_sets (workout_id);
 
+-- Programs — synced as opaque client documents. The engine that generates
+-- and interprets them lives entirely on-device (src/engine/*), so the server
+-- just relays the JSON payload keyed on the client's own uid, exactly like
+-- workouts. That keeps custom-exercise references and target tweaks intact
+-- across devices without a server-side exercise catalogue.
+CREATE TABLE IF NOT EXISTS programs (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    client_id   TEXT NOT NULL,
+    name        TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 0,
+    payload     TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    UNIQUE (user_id, client_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_programs_user ON programs (user_id, updated_at DESC);
+
 -- Entitlements — the substrate for Liftit Pro. One row per paying or
 -- grandfathered user; no row means the free plan. Dormant by design: the API
 -- treats every account as Pro until the BILLING_ENFORCED env var is "true"

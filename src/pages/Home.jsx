@@ -19,11 +19,14 @@ import { useModal } from '../contexts/ModalContext';
 import {
     dailyVolumeSeries,
     weeklyVolumeComparison,
+    weeklyVolumeTarget,
+    weeklyDigest,
     trainingStreak,
     prTimeline,
 } from '../engine/analytics';
 import { currentProgramWeek, phaseForWeek } from '../engine/generator';
 import { Card, Chip, StatTile, ProgressBar } from '../components/ui/Primitives';
+import DigestCard from '../components/home/DigestCard';
 const LazyWeeklyVolumeBarChart = React.lazy(() =>
     import('../components/charts/VolumeChart').then(m => ({ default: m.WeeklyVolumeBarChart }))
 );
@@ -153,8 +156,15 @@ export default function Home() {
             ? Math.round(((weekCmp.current - weekCmp.previous) / weekCmp.previous) * 100)
             : null;
 
-    // Weekly volume ring — compare to previous week or a default target
-    const weeklyTarget = weekCmp.previous > 0 ? weekCmp.previous * 1.05 : weekCmp.current || 1;
+    // Weekly volume ring — a grounded target: with a program it's your own
+    // average set volume × the week's planned sets; without one, it's last
+    // week's volume (maintain). 0 = not enough data to justify a target yet.
+    const weeklyTarget = useMemo(
+        () => weeklyVolumeTarget(workouts, program, (id) => db.exercises.byId(id)),
+        [workouts, program],
+    );
+
+    const digest = useMemo(() => weeklyDigest(workouts, program), [workouts, program]);
 
     return (
         <div className="space-y-8 animate-fade-in">
@@ -320,6 +330,9 @@ export default function Home() {
 
             <div className="gradient-divider" />
 
+            {/* ── Weekly digest ── */}
+            <DigestCard digest={digest} />
+
             {/* ── Main Content Grid ── */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 {/* Left: Program overview + Volume chart */}
@@ -359,12 +372,14 @@ export default function Home() {
                                         {phase?.name}
                                     </span>
                                 </div>
-                                <ProgressRing
-                                    value={weekCmp.current}
-                                    max={weeklyTarget}
-                                    size={56}
-                                    strokeWidth={4}
-                                />
+                                {weeklyTarget > 0 && (
+                                    <ProgressRing
+                                        value={weekCmp.current}
+                                        max={weeklyTarget}
+                                        size={56}
+                                        strokeWidth={4}
+                                    />
+                                )}
                             </div>
                             <ProgressBar value={(week / program.durationWeeks) * 100} />
                         </div>

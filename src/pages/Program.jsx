@@ -10,11 +10,14 @@ import {
     ChevronDown,
     Info,
     Minus,
+    Share2,
+    Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { db } from '../data/db';
 import { useActiveProgram } from '../data/DataProvider';
 import { generateProgram, currentProgramWeek, phaseForWeek, scaleTargetsForWeek, GOALS } from '../engine/generator';
+import { buildShareUrl, programFromFragment } from '../data/shareLinks';
 import ExercisePicker from '../components/workout/ExercisePicker';
 import { Card, Chip, PageHeader, ProgressBar, Segmented, Sheet } from '../components/ui/Primitives';
 import Glass from '../components/ui/Glass';
@@ -29,8 +32,18 @@ import { hapticMedium, hapticSuccess } from '../lib/platform';
 export default function Program() {
     const program = useActiveProgram();
     const [params, setParams] = useSearchParams();
-    const wizardOpen = params.get('new') === '1' || !program;
+    const shareFragment = params.get('program');
+    const wizardOpen = (params.get('new') === '1' || !program) && !shareFragment;
 
+    if (shareFragment) {
+        return (
+            <ImportShare
+                fragment={shareFragment}
+                onDone={() => setParams({})}
+                onCancel={() => setParams({})}
+            />
+        );
+    }
     if (wizardOpen) {
         return (
             <Wizard
@@ -53,6 +66,16 @@ function ProgramView({ program, onNew }) {
     const [editTarget, setEditTarget] = useState(null); // { dayNumber, index } | { dayNumber, add: true }
     const [showWhy, setShowWhy] = useState(false);
     const phase = phaseForWeek(viewWeek, program.durationWeeks);
+
+    const share = async () => {
+        try {
+            await navigator.clipboard.writeText(buildShareUrl(program));
+            hapticSuccess();
+            showToast('Share link copied — anyone can import this program.', 'success');
+        } catch {
+            showToast('Could not copy the share link.', 'error');
+        }
+    };
 
     const saveDays = (mutator) => {
         const next = JSON.parse(JSON.stringify(program));
@@ -91,6 +114,9 @@ function ProgramView({ program, onNew }) {
                 icon={Calendar}
                 actions={
                     <>
+                        <button type="button" onClick={share} className="btn-outline">
+                            <Share2 className="h-4 w-4" /> Share
+                        </button>
                         <button type="button" onClick={onNew} className="btn-outline">
                             <Sparkles className="h-4 w-4" /> New block
                         </button>
@@ -268,6 +294,116 @@ function DayCard({ day, viewWeek, durationWeeks, onSwap, onAdd, onRemove, onAdju
                 </div>
             )}
         </Card>
+    );
+}
+
+/* ==================================================================
+   Share-link import — preview before commit
+   ================================================================== */
+function ImportShare({ fragment, onDone, onCancel }) {
+    const { showToast } = useToast();
+    const result = useMemo(() => {
+        try {
+            return { program: programFromFragment(fragment), error: null };
+        } catch (e) {
+            return { program: null, error: e };
+        }
+    }, [fragment]);
+
+    const { program, error } = result;
+
+    const confirm = () => {
+        hapticMedium();
+        db.programs.save(program);
+        hapticSuccess();
+        showToast(`Imported "${program.name}" — it is not active yet.`, 'success');
+        onDone();
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <PageHeader
+                eyebrow="Plan"
+                title="Import shared program"
+                description="Review the routine before it touches your data."
+                icon={Download}
+                actions={
+                    <button type="button" onClick={onCancel} className="btn-ghost">
+                        Cancel
+                    </button>
+                }
+            />
+            <Card className="space-y-5 glass-card-glow border-accent/20">
+                {error ? (
+                    <div className="space-y-4">
+                        <Chip tone="danger">Invalid link</Chip>
+                        <p className="text-sm text-ink-300">
+                            {error?.message ?? 'This share link could not be read.'}
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <div className="eyebrow mb-1">Preview</div>
+                                <h2 className="font-display text-xl font-bold text-white">
+                                    {program.name}
+                                </h2>
+                            </div>
+                            <div className="flex gap-2">
+                                <Chip tone="accent">{program.daysPerWeek} days/wk</Chip>
+                                <Chip>{program.durationWeeks} weeks</Chip>
+                                <Chip>{program.goal}</Chip>
+                            </div>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                            {program.days.map((day) => (
+                                <div
+                                    key={day.dayNumber}
+                                    className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 holo-card"
+                                >
+                                    <p className="mb-1.5 text-sm font-bold text-white">
+                                        Day {day.dayNumber} · {day.name}
+                                    </p>
+                                    <p className="text-xs text-ink-400">
+                                        {day.exercises.length} exercises
+                                        {day.isRestDay ? ' · rest day' : ''}
+                                    </p>
+                                    <ul className="mt-1 space-y-0.5 text-xs text-ink-500">
+                                        {day.exercises.slice(0, 6).map((e, i) => (
+                                            <li key={i} className="truncate">
+                                                {db.exercises.byId(e.exerciseId)?.name ?? 'Exercise'}
+                                                {' — '}
+                                                {e.targetSets}×{e.targetRepsMin}–{e.targetRepsMax}
+                                            </li>
+                                        ))}
+                                        {day.exercises.length > 6 && (
+                                            <li>+{day.exercises.length - 6} more…</li>
+                                        )}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs text-ink-500">
+                            Importing never changes your workout history. The program is added
+                            inactive — switch to it from your program list.
+                        </p>
+                        <div className="flex gap-3">
+                            <button type="button" onClick={onCancel} className="btn-outline flex-1">
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirm}
+                                className="btn-primary btn-lg flex-1"
+                            >
+                                <Download className="h-5 w-5" /> Import program
+                            </button>
+                        </div>
+                    </>
+                )}
+            </Card>
+        </div>
     );
 }
 

@@ -169,6 +169,28 @@ describe('Liftit · sync failure reporting', () => {
         expect(result.error).toMatchObject({ stage: 'push' });
     });
 
+    it('pushes program saves and deletes to the programs API', async () => {
+        const calls = [];
+        mockApiState.putHandler = (endpoint, body) => {
+            calls.push(['put', endpoint, body?.name]);
+            return Promise.resolve({ data: {} });
+        };
+        mockApiState.delHandler = (endpoint) => {
+            calls.push(['del', endpoint]);
+            return Promise.resolve({ data: {} });
+        };
+
+        db.programs.save({ id: 'p1', name: 'Synced Plan', isActive: true, days: [] });
+        db.programs.remove('p1');
+
+        const result = await runSync();
+
+        expect(result.pushed).toBe(2);
+        expect(result.remaining).toBe(0);
+        expect(calls).toContainEqual(['put', '/programs/p1', 'Synced Plan']);
+        expect(calls).toContainEqual(['del', '/programs/p1']);
+    });
+
     it('tells the user in Settings when a sync fails', async () => {
         vi.spyOn(console, 'warn').mockImplementation(() => {});
         db.settings.update({ onboarded: true });

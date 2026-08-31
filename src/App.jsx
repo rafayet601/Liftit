@@ -23,11 +23,13 @@ import { UnitProvider } from './contexts/UnitContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ModalProvider, useModal } from './contexts/ModalContext';
 import { DataProvider, useSettings, useSyncStatus } from './data/DataProvider';
+import RecoveryProvider from './contexts/RecoveryContext';
 import TrainerChat from './components/ai/TrainerChat';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import RouteErrorBoundary from './components/ui/RouteErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
 import { initNativeShell, isStandalone, hapticSelection } from './lib/platform';
+import { initWatchBridge } from './lib/watchBridge';
 
 import Home from './pages/Home';
 import Workout from './pages/Workout';
@@ -244,6 +246,7 @@ export function AppRoutes() {
 function NativeShell() {
     useEffect(() => {
         initNativeShell();
+        initWatchBridge(); // Apple Watch companion — idempotent, no-op on web
         if (isStandalone()) {
             document.documentElement.classList.add('is-standalone');
         }
@@ -255,19 +258,21 @@ export default function App() {
     return (
         <ErrorBoundary>
             <DataProvider>
-                <AuthProvider>
-                    <UnitProvider>
-                        <ModalProvider>
-                            <ToastProvider>
-                                <Router>
-                                    <ShaderBackground />
-                                    <NativeShell />
-                                    <AppRoutes />
-                                </Router>
-                            </ToastProvider>
-                        </ModalProvider>
-                    </UnitProvider>
-                </AuthProvider>
+                <RecoveryProvider>
+                    <AuthProvider>
+                        <UnitProvider>
+                            <ModalProvider>
+                                <ToastProvider>
+                                    <Router>
+                                        <ShaderBackground />
+                                        <NativeShell />
+                                        <AppRoutes />
+                                    </Router>
+                                </ToastProvider>
+                            </ModalProvider>
+                        </UnitProvider>
+                    </AuthProvider>
+                </RecoveryProvider>
             </DataProvider>
         </ErrorBoundary>
     );

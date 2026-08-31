@@ -6,7 +6,7 @@
  * (WorkoutLog/WorkoutSet/Program/ProgramDay) so sync is a thin mapping.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 let counter = 0;
 export function uid(prefix = 'id') {
@@ -92,6 +92,19 @@ export function createProgram(partial = {}) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Bodyweight                                                          */
+/* ------------------------------------------------------------------ */
+
+export function createBodyweightEntry(partial = {}) {
+    return {
+        id: partial.id ?? uid('bw'),
+        date: partial.date ?? new Date().toISOString(),
+        weightKg: numberOr(partial.weightKg, 0), // kg; display converts at the edge
+        source: partial.source === 'import' ? 'import' : 'manual',
+    };
+}
+
+/* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -103,6 +116,9 @@ export function createSettings(partial = {}) {
         goal: partial.goal ?? 'hypertrophy',
         onboarded: Boolean(partial.onboarded),
         restTimerEnabled: partial.restTimerEnabled ?? true,
+        // Opt-in wearable readiness. Off by default; the deterministic
+        // engine always decides — readiness only modulates thresholds.
+        recovery: { enabled: Boolean(partial.recovery?.enabled) },
         // Bring-your-own AI provider. The key never leaves this device.
         ai: {
             provider: partial.ai?.provider ?? 'none', // none | anthropic | openai | groq | custom
@@ -124,6 +140,9 @@ export function createDocument(partial = {}) {
         workouts: Array.isArray(partial.workouts) ? partial.workouts.map(createWorkout) : [],
         programs: Array.isArray(partial.programs) ? partial.programs.map(createProgram) : [],
         customExercises: Array.isArray(partial.customExercises) ? partial.customExercises : [],
+        bodyweightEntries: Array.isArray(partial.bodyweightEntries)
+            ? partial.bodyweightEntries.map(createBodyweightEntry)
+            : [],
         syncQueue: Array.isArray(partial.syncQueue) ? partial.syncQueue : [],
         meta: {
             isDemo: Boolean(partial.meta?.isDemo),

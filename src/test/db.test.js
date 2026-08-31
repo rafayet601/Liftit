@@ -28,6 +28,44 @@ describe('repository', () => {
         expect(db.programs.get('p1').isActive).toBe(false);
     });
 
+    it('imports remote programs add-only and honors remote activation', () => {
+        db.programs.save({ id: 'p-local', name: 'Local Plan', isActive: true });
+
+        const imported = db.programs.importRemote([
+            {
+                id: 'p-remote-1',
+                isActive: true,
+                payload: { id: 'p-remote-1', name: 'Phone Plan', isActive: true, days: [] },
+            },
+            { id: 'p-remote-2', isActive: false, payload: { id: 'p-remote-2', name: 'Old Plan', days: [] } },
+            // Malformed entries are ignored, not fatal.
+            { id: 'p-broken', isActive: true },
+            null,
+        ]);
+        expect(imported).toBe(2);
+        expect(db.programs.get('p-remote-1').name).toBe('Phone Plan');
+        // The remotely-activated program wins the single-active slot.
+        expect(db.programs.getActive().id).toBe('p-remote-1');
+        expect(db.programs.get('p-local').isActive).toBe(false);
+
+        // Replaying the same pull must not duplicate anything.
+        expect(
+            db.programs.importRemote([
+                { id: 'p-remote-1', isActive: true, payload: { id: 'p-remote-1', name: 'Phone Plan', isActive: true, days: [] } },
+            ]),
+        ).toBe(0);
+        expect(db.programs.list()).toHaveLength(3);
+    });
+
+    it('keeps the local active program when imports carry no activation', () => {
+        db.programs.save({ id: 'p-local', name: 'Local Plan', isActive: true });
+        db.programs.importRemote([
+            { id: 'p-remote-2', isActive: false, payload: { id: 'p-remote-2', name: 'Old Plan', isActive: false, days: [] } },
+        ]);
+        expect(db.programs.getActive().id).toBe('p-local');
+        expect(db.programs.get('p-remote-2').isActive).toBe(false);
+    });
+
     it('queues sync ops and collapses duplicates per entity', () => {
         db.workouts.save({ id: 'a', name: 'One' });
         db.workouts.save({ id: 'a', name: 'Two' });

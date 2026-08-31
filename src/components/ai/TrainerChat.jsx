@@ -1,12 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Send, Bot, MessageCircle, X, Settings as SettingsIcon } from 'lucide-react';
+import { Send, Bot, MessageCircle, X, Settings as SettingsIcon, Undo2, Check, Repeat } from 'lucide-react';
 import { chat, coachAvailable, hasUserProvider, getAiConfig, AI_PROVIDERS } from '../../ai/providers';
-import { buildCoachSystemPrompt } from '../../ai/coach';
+import { buildCoachSystemPrompt, parseCoachActions } from '../../ai/coach';
 import TrainerMessage from './TrainerMessage';
 import { useSettings } from '../../data/DataProvider';
+import { db } from '../../data/db';
+import { getActiveSession, applySessionAction, undoSessionAction } from '../../hooks/useActiveSession';
 import { LoadingRing } from '../ui/Primitives';
 import { hapticSelection } from '../../lib/platform';
+
+/** Human label for a validated action chip, built from real names only. */
+function actionLabel(action) {
+    const session = getActiveSession();
+    const ex = session?.exercises?.find((e) => e.key === action.exerciseKey);
+    const name = db.exercises.byId(ex?.exerciseId)?.name ?? action.exerciseKey;
+    if (action.action === 'swap_exercise') {
+        const to = db.exercises.byId(action.newExerciseId)?.name ?? action.newExerciseId;
+        return `Apply swap: ${name} → ${to}`;
+    }
+    if (action.action === 'rescale_targets') {
+        return `Apply target change: ${name} → ${action.targetSets} sets`;
+    }
+    if (action.action === 'set_target_reps') {
+        return `Apply rep target: ${name} → ${action.repsMin}–${action.repsMax} reps`;
+    }
+    return 'Apply suggested change';
+}
 
 /**
  * Coach — chat grounded in the lifter's real program + history. Uses the
@@ -30,6 +50,8 @@ export default function TrainerChat({ onClose }) {
     ]);
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
+    const [pendingActions, setPendingActions] = useState([]); // [{ id, action, label }]
+    const [lastUndo, setLastUndo] = useState(null); // { snapshot, label }
     const bottomRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -59,10 +81,21 @@ export default function TrainerChat({ onClose }) {
         setBusy(true);
         try {
             const reply = await chat(history, systemPrompt);
+            const { text, actions } = parseCoachActions(reply);
             setMessages((prev) => [
                 ...prev,
-                { id: Date.now() + 1, role: 'assistant', content: reply, timestamp: new Date() },
+                { id: Date.now() + 1, role: 'assistant', content: text || reply, timestamp: new Date() },
             ]);
+            if (actions.length) {
+                setPendingActions((prev) => [
+                    ...prev,
+                    ...actions.map((action, i) => ({
+                        id: `${Date.now() + 2}-${i}`,
+                        action,
+                        label: actionLabel(action),
+                    })),
+                ]);
+            }
         } catch (err) {
             setMessages((prev) => [
                 ...prev,
@@ -85,6 +118,39 @@ export default function TrainerChat({ onClose }) {
         'Plan my next block',
         'Should I deload soon?',
     ];
+
+    /* ---------- AI action chips: never auto-applied ---------- */
+    const applyAction = (chip) => {
+        hapticSelection();
+        const result = applySessionAction(chip.action);
+        setPendingActions((prev) => prev.filter((c) => c.id !== chip.id));
+        if (result.ok) {
+            setLastUndo({ snapshot: result.snapshot, label: chip.label });
+        } else {
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: Date.now(),
+                    role: 'assistant',
+                    content: `Couldn't apply that change: ${result.error}`,
+                    timestamp: new Date(),
+                    isError: true,
+                },
+            ]);
+        }
+    };
+
+    const dismissAction = (chip) => {
+        hapticSelection();
+        setPendingActions((prev) => prev.filter((c) => c.id !== chip.id));
+    };
+
+    const undoLastAction = () => {
+        if (!lastUndo) return;
+        hapticSelection();
+        undoSessionAction(lastUndo.snapshot);
+        setLastUndo(null);
+    };
 
     return (
         <div
@@ -159,6 +225,54 @@ export default function TrainerChat({ onClose }) {
                             )}
                             <div ref={bottomRef} />
                         </div>
+
+                        {/* Action confirm chips — apply only on explicit tap */}
+                        {(pendingActions.length > 0 || lastUndo) && (
+                            <div className="space-y-2 border-t border-white/[0.07] px-5 py-3">
+                                {pendingActions.map((chip) => (
+                                    <div
+                                        key={chip.id}
+                                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/25 bg-accent/[0.06] px-3 py-2"
+                                    >
+                                        <span className="flex min-w-0 items-center gap-2 text-xs font-semibold text-white">
+                                            <Repeat className="h-3.5 w-3.5 shrink-0 text-accent" />
+                                            <span className="truncate">{chip.label}</span>
+                                        </span>
+                                        <span className="flex shrink-0 gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => applyAction(chip)}
+                                                className="btn-primary px-3 py-1.5 text-xs"
+                                            >
+                                                <Check className="h-3.5 w-3.5" /> Apply
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => dismissAction(chip)}
+                                                className="btn-ghost px-3 py-1.5 text-xs"
+                                            >
+                                                Dismiss
+                                            </button>
+                                        </span>
+                                    </div>
+                                ))}
+                                {lastUndo && (
+                                    <div className="flex items-center justify-between gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2">
+                                        <span className="flex min-w-0 items-center gap-2 text-xs text-ink-300">
+                                            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                                            <span className="truncate">Applied · {lastUndo.label}</span>
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={undoLastAction}
+                                            className="btn-secondary shrink-0 px-3 py-1.5 text-xs"
+                                        >
+                                            <Undo2 className="h-3.5 w-3.5" /> Undo
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Quick prompts */}
                         {messages.length <= 2 && !busy && (
