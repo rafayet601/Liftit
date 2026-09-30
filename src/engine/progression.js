@@ -395,6 +395,15 @@ export function getProgressionRecommendation(sessions, analysis, units = 'kg') {
         };
     }
 
+    if (analysis.trend === 'starting' || analysis.trend === 'insufficient_data') {
+        return {
+            title: 'Building your baseline',
+            description: 'Your first logs set a starting point. Repeat this lift to compare your performance.',
+            action: null,
+            priority: 'info'
+        };
+    }
+
     if (analysis.trend === 'plateaued') {
         return {
             title: 'Plateau detected',

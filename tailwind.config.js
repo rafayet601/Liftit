@@ -12,8 +12,8 @@ export default {
                     100: '#efedea',
                     200: '#dedbd5',
                     300: '#c4c1ba',
-                    400: '#a3a19b',
-                    500: '#7c7a75',
+                    400: '#b0aebb',
+                    500: '#9b99a5',
                     600: '#55534f',
                     700: '#33322f',
                     800: '#1b1b1f',
@@ -22,7 +22,7 @@ export default {
                 },
                 // FORGE — deep purple accent
                 accent: {
-                    DEFAULT: '#8b5cf6',
+                    DEFAULT: '#b8a0ff',
                     50: '#f5f3ff',
                     100: '#ede9fe',
                     200: '#ddd6fe',
@@ -137,7 +137,7 @@ export default {
                 },
             },
             animation: {
-                'fade-in': 'fade-in 240ms cubic-bezier(0.2,0.7,0.2,1) both',
+                'fade-in': 'fade-in 240ms cubic-bezier(0.2,0.7,0.2,1) backwards',
                 'scale-in': 'scale-in 200ms cubic-bezier(0.2,0.7,0.2,1) both',
                 'slide-up': 'slide-up 280ms cubic-bezier(0.2,0.7,0.2,1) both',
                 'slide-in-right': 'slide-in-right 280ms cubic-bezier(0.2,0.8,0.2,1) both',

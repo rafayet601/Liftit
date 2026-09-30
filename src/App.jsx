@@ -23,7 +23,7 @@ import { UnitProvider } from './contexts/UnitContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ModalProvider, useModal } from './contexts/ModalContext';
 import { DataProvider, useSettings, useSyncStatus } from './data/DataProvider';
-import RecoveryProvider from './contexts/RecoveryContext';
+import { RecoveryProvider } from './contexts/RecoveryContext';
 import TrainerChat from './components/ai/TrainerChat';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import RouteErrorBoundary from './components/ui/RouteErrorBoundary';
@@ -41,7 +41,6 @@ import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
 import AuthCallback from './components/auth/AuthCallback';
 import MobileNav from './components/layout/MobileNav';
-import ShaderBackground from './components/ui/ShaderBackground';
 import LinearGradient from './components/ui/LinearGradient';
 
 export const NAV_ITEMS = [
@@ -81,7 +80,7 @@ function Sidebar() {
                 }}
             />
             {/* Brand */}
-            <Link to="/" unstable_viewTransition className="group mb-10 flex items-center gap-3">
+            <Link to="/" viewTransition className="group mb-10 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-purple text-ink-950 transition-transform group-hover:-rotate-6">
                     <Dumbbell className="h-5 w-5" strokeWidth={2.4} />
                 </div>
@@ -90,13 +89,13 @@ function Sidebar() {
                         Liftit<span className="text-accent">.</span>
                     </h1>
                     <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-ink-500">
-                        Forge · v4
+                        Your training, in focus
                     </p>
                 </div>
             </Link>
 
             {/* Primary nav */}
-            <nav className="flex-1 space-y-1">
+            <nav className="flex-1 space-y-1" aria-label="Primary">
                 {NAV_ITEMS.map((item) => {
                     const isActive =
                         item.path === '/'
@@ -106,7 +105,7 @@ function Sidebar() {
                         <Link
                             key={item.path}
                             to={item.path}
-                            unstable_viewTransition
+                            viewTransition
                             onClick={() => hapticSelection()}
                             aria-current={isActive ? 'page' : undefined}
                             className={clsx(
@@ -158,7 +157,7 @@ function Sidebar() {
             {/* User card → Settings */}
             <Link
                 to="/settings"
-                unstable_viewTransition
+                viewTransition
                 className="group flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-accent/30"
             >
                 <div className="flex h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
@@ -194,10 +193,20 @@ function Layout({ children }) {
     }
 
     return (
-        <div className="relative min-h-dvh bg-transparent text-ink-200">
+        <div className="app-shell relative min-h-dvh bg-transparent text-ink-200">
+            <a href="#main-content" className="skip-link">Skip to content</a>
             <Sidebar />
-            <main className="relative flex-1 overflow-x-hidden pb-28 pt-safe md:ml-64 md:pb-10">
-                <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8 md:py-10">
+            <div className="mobile-topbar md:hidden">
+                <Link to="/" className="flex items-center gap-2 font-display text-xl font-bold text-white" aria-label="Liftit home">
+                    <Dumbbell className="h-5 w-5 text-accent" /> Liftit<span className="text-accent">.</span>
+                </Link>
+                <div className="flex items-center gap-2">
+                    <MobileCoachButton />
+                    <Link to="/settings" className="topbar-action" aria-label="Settings" aria-current={location.pathname === '/settings' ? 'page' : undefined}><Cog className="h-5 w-5" /></Link>
+                </div>
+            </div>
+            <main id="main-content" tabIndex={-1} className="relative flex-1 pb-28 md:ml-64 md:pb-10">
+                <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-10 lg:px-10">
                     {children}
                 </div>
             </main>
@@ -205,6 +214,11 @@ function Layout({ children }) {
             <TrainerModal />
         </div>
     );
+}
+
+function MobileCoachButton() {
+    const { openTrainer } = useModal();
+    return <button type="button" onClick={openTrainer} className="topbar-action" aria-label="Open Coach"><MessageCircle className="h-5 w-5" /></button>;
 }
 
 function TrainerModal() {
@@ -264,7 +278,6 @@ export default function App() {
                             <ModalProvider>
                                 <ToastProvider>
                                     <Router>
-                                        <ShaderBackground />
                                         <NativeShell />
                                         <AppRoutes />
                                     </Router>

@@ -128,8 +128,7 @@ function ProgramView({ program, onNew }) {
             />
 
             {/* Phase timeline */}
-            <Glass tint="neutral" glow style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
-            <Card className="glass-card-glow border-accent/20">
+            <Card className="border-accent/20">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <div className="eyebrow mb-1 flex items-center gap-2">
@@ -150,18 +149,20 @@ function ProgramView({ program, onNew }) {
                     )}
                 </div>
                 <ProgressBar value={(week / program.durationWeeks) * 100} />
-                <div className="mt-3 flex gap-1.5 overflow-x-auto no-scrollbar">
+                <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
                     {Array.from({ length: program.durationWeeks }, (_, i) => i + 1).map((w) => {
                         const p = phaseForWeek(w, program.durationWeeks);
                         return (
                             <button
                                 key={w}
                                 type="button"
+                                aria-pressed={w === viewWeek}
+                                title={`Week ${w} · ${p.name}`}
                                 onClick={() => setViewWeek(w)}
                                 className={clsx(
-                                    'flex shrink-0 flex-col items-center rounded-xl border px-3 py-2 transition-all duration-200',
+                                    'flex min-w-0 flex-col items-center rounded-xl border px-2 py-2 transition-all duration-200',
                                     w === viewWeek
-                                        ? 'border-accent/50 bg-accent/10 text-accent shadow-[0_0_12px_-4px_rgba(139,92,246,0.4)] scale-105'
+                                        ? 'border-accent/50 bg-accent/10 text-accent'
                                         : 'border-white/[0.07] bg-white/[0.02] text-ink-500 hover:text-white hover:border-white/20',
                                     w === week && w !== viewWeek && 'border-white/20',
                                 )}
@@ -173,7 +174,6 @@ function ProgramView({ program, onNew }) {
                     })}
                 </div>
             </Card>
-            </Glass>
 
             {/* Week-adjusted day cards */}
             <div className="space-y-3">

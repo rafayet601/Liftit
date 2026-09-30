@@ -1,6 +1,7 @@
 import React from 'react';
 import { Newspaper } from 'lucide-react';
 import { Card, Chip } from '../ui/Primitives';
+import { useUnit } from '../../contexts/UnitContext';
 
 /**
  * Weekly digest card for Home. Shows ONLY values computed by
@@ -16,6 +17,7 @@ const ACWR_CHIP = {
 };
 
 export default function DigestCard({ digest }) {
+    const { unit, displayWeight } = useUnit();
     if (!digest) return null;
     const acwrChip = ACWR_CHIP[digest.acwrStatus] ?? { tone: 'default', label: digest.acwrStatus };
 
@@ -27,7 +29,7 @@ export default function DigestCard({ digest }) {
                 </span>
                 <div className="min-w-0">
                     <div className="eyebrow mb-0.5">Weekly digest</div>
-                    <p className="truncate text-sm text-ink-300" title={digest.message}>
+                    <p className="text-sm leading-relaxed text-ink-300" title={digest.message}>
                         {digest.message}
                     </p>
                 </div>
@@ -40,7 +42,7 @@ export default function DigestCard({ digest }) {
                         {digest.volumeDeltaPct}% volume
                     </Chip>
                 ) : (
-                    <Chip>{Math.round(digest.volumeCmp.current).toLocaleString()} kg this week</Chip>
+                    <Chip>{Math.round(displayWeight(digest.volumeCmp.current)).toLocaleString()} {unit} this week</Chip>
                 )}
                 <Chip tone={digest.prCount > 0 ? 'accent' : 'default'}>
                     {digest.prCount} PR{digest.prCount === 1 ? '' : 's'}

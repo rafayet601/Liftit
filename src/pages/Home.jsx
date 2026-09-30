@@ -10,7 +10,9 @@ import {
     Sparkles,
     Dumbbell,
     MessageCircle,
-    TrendingUp,
+    ArrowUpRight,
+    ArrowRight,
+    Clock,
 } from 'lucide-react';
 import { db } from '../data/db';
 import { useWorkouts, useActiveProgram, useSettings } from '../data/DataProvider';
@@ -24,13 +26,13 @@ import {
     trainingStreak,
     prTimeline,
 } from '../engine/analytics';
-import { currentProgramWeek, phaseForWeek } from '../engine/generator';
+import { currentProgramWeek, phaseForWeek, scaleTargetsForWeek } from '../engine/generator';
 import { Card, Chip, StatTile, ProgressBar } from '../components/ui/Primitives';
 import DigestCard from '../components/home/DigestCard';
 const LazyWeeklyVolumeBarChart = React.lazy(() =>
     import('../components/charts/VolumeChart').then(m => ({ default: m.WeeklyVolumeBarChart }))
 );
-import WaveDistortion from '../components/ui/WaveDistortion';
+import { useActiveSession } from '../hooks/useActiveSession';
 import LinearGradient from '../components/ui/LinearGradient';
 import Glass from '../components/ui/Glass';
 
@@ -117,6 +119,7 @@ function getPhaseBadgeClass(phaseName = '') {
 
 export default function Home() {
     const workouts = useWorkouts();
+    const { session } = useActiveSession();
     const program = useActiveProgram();
     const settings = useSettings();
     const { unit, displayWeight } = useUnit();
@@ -164,10 +167,14 @@ export default function Home() {
         [workouts, program],
     );
 
-    const digest = useMemo(() => weeklyDigest(workouts, program), [workouts, program]);
+    const lastProgramWorkout = program ? workouts.find(w => w.programId === program.id) : null;
+    const nextDayNumber = lastProgramWorkout?.programDayNumber ? (lastProgramWorkout.programDayNumber % program.daysPerWeek) + 1 : 1;
+    const nextDay = program?.days.find(day => day.dayNumber === nextDayNumber);
+
+    const digest = useMemo(() => weeklyDigest(workouts, program, new Date(), { unit, displayWeight }), [workouts, program, unit, displayWeight]);
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
             {db.meta.isDemo() && (
                 <div className="glass-card-glow-steel flex flex-wrap items-center gap-3 border-amber-400/30 bg-amber-400/10 p-3 text-amber-200 rounded-2xl">
                     <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
@@ -178,157 +185,42 @@ export default function Home() {
                 </div>
             )}
 
-            {/* ── Hero Section ── */}
-            <header className="relative overflow-hidden rounded-3xl">
-                <WaveDistortion
-                    preset="aurora"
-                    amplitude={0.1}
-                    frequency={2.5}
-                    speed={0.5}
-                    opacity={0.7}
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        width: '100%',
-                        height: '100%',
-                        zIndex: 0,
-                        borderRadius: '24px',
-                    }}
-                />
-
-                <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute -top-8 -left-4 h-48 w-64 rounded-full opacity-20"
-                    style={{
-                        background: 'radial-gradient(ellipse, rgba(139,92,246,0.5) 0%, transparent 70%)',
-                        filter: 'blur(32px)',
-                    }}
-                />
-
-                <div className="relative z-10 flex flex-wrap items-end justify-between gap-6 p-6 md:p-8">
-                    <div>
-                        <div className="eyebrow mb-2 flex items-center gap-2">
-                            <span
-                                className="inline-block h-1.5 w-1.5 rounded-full bg-accent"
-                                style={{ boxShadow: '0 0 6px rgba(139,92,246,0.8)' }}
-                            />
-                            {greeting}
-                        </div>
-                        <h1 className="font-display text-[38px] font-bold leading-[1.1] tracking-tight md:text-5xl text-aurora">
-                            Hey,{' '}
-                            <span
-                                className="text-gradient-purple"
-                                style={{ textShadow: 'none' }}
-                            >
-                                {firstName}
-                            </span>
-                            <span className="text-accent">.</span>
-                        </h1>
-                        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-ink-400">
-                            {program
-                                ? `Week ${week} of ${program.durationWeeks} · ${phase.name}. ${phase.blurb}`
-                                : workouts.length
-                                  ? 'No active program — freestyle is fine, but a plan compounds.'
-                                  : 'Log your first session and the engine starts working for you.'}
-                        </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        {streak > 0 && (
-                            <Glass
-                                tint="purple"
-                                glow
-                                hover
-                                padded={false}
-                                className="flex items-center gap-3 px-4 py-3 animate-pulse-glow"
-                                style={{ animationPlayState: 'running' }}
-                            >
-                                <span
-                                    className="flex h-8 w-8 items-center justify-center rounded-lg"
-                                    style={{ background: 'rgba(139,92,246,0.15)' }}
-                                >
-                                    <Flame className="h-4 w-4 text-accent" strokeWidth={2.5} />
-                                </span>
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-ink-500">
-                                        Streak
-                                    </p>
-                                    <p className="font-display text-2xl font-bold tabular-nums text-white leading-tight">
-                                        {streak}
-                                        <span className="ml-1 text-xs font-bold text-ink-500">days</span>
-                                    </p>
-                                </div>
-                            </Glass>
-                        )}
-                        <Link
-                            to="/workout"
-                            className="btn-cta gap-2.5"
-                            id="home-start-workout-btn"
-                        >
-                            <PlayCircle className="h-5 w-5" strokeWidth={2.2} />
-                            Start Workout
-                        </Link>
-                    </div>
+            <header className="dashboard-heading">
+                <div>
+                    <div className="eyebrow mb-2">{greeting} · let's build momentum</div>
+                    <h1 className="font-display text-3xl font-bold tracking-tight text-white md:text-4xl">Hey, {firstName}<span className="text-accent">.</span></h1>
+                    <p className="mt-2 text-sm text-ink-400">Your training, one good session at a time.</p>
                 </div>
-
-                <LinearGradient
-                    preset="purpleToSteel"
-                    animated
-                    glow
-                    variant="strip"
-                    style={{
-                        position: 'absolute',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: '2px',
-                        borderRadius: 0,
-                    }}
-                />
+                <span className="dashboard-date">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</span>
             </header>
 
-            {/* ── Stat Tiles ── */}
+            <section className="session-hero" aria-label="Your next workout">
+                <div className="session-hero-content">
+                    <div className="flex flex-wrap items-center gap-2 mb-5">
+                        <Chip tone="accent">{session ? 'In progress' : 'Up next'}</Chip>
+                        {program && <span className="text-xs text-ink-300">Week {week} of {program.durationWeeks} · {phase.name}</span>}
+                    </div>
+                    <h2 className="font-display text-3xl font-bold text-white md:text-[40px] leading-tight">{session?.name || nextDay?.name || 'Make today a training day.'}</h2>
+                    <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-300">{session ? 'Your workout is saved. Pick up right where you left off.' : nextDay ? `${nextDay.exercises.length} exercises · ${nextDay.exercises.reduce((total, ex) => total + scaleTargetsForWeek(ex, week, program.durationWeeks).targetSets, 0)} planned sets. ${phase.blurb}` : workouts.length ? 'Build on your last session with a freestyle workout, or create a plan for the weeks ahead.' : 'Log your first session and the engine starts working for you.'}</p>
+                    <div className="mt-6 flex flex-wrap items-center gap-3">
+                        <Link to="/workout" className="btn-primary px-4 py-3 sm:btn-lg" id="home-start-workout-btn"><PlayCircle className="h-5 w-5" />{session ? 'Resume Workout' : 'Start Workout'}<ArrowRight className="h-4 w-4" /></Link>
+                        <Link to="/program" className="inline-flex items-center gap-1 text-sm font-semibold text-ink-300 hover:text-accent">{program ? 'View plan' : 'Create program'}<ArrowUpRight className="h-4 w-4" /></Link>
+                    </div>
+                </div>
+                <div className="session-hero-art" aria-hidden="true">
+                    <svg viewBox="0 0 300 260" fill="none"><circle cx="150" cy="130" r="108" stroke="currentColor" strokeOpacity=".12"/><circle cx="150" cy="130" r="80" stroke="currentColor" strokeOpacity=".2" strokeDasharray="3 9"/><g transform="rotate(-28 150 130)"><rect x="45" y="122" width="210" height="16" rx="8" fill="currentColor" opacity=".65"/><rect x="65" y="79" width="25" height="102" rx="9" fill="currentColor"/><rect x="90" y="95" width="18" height="70" rx="6" fill="currentColor" opacity=".7"/><rect x="210" y="79" width="25" height="102" rx="9" fill="currentColor"/><rect x="192" y="95" width="18" height="70" rx="6" fill="currentColor" opacity=".7"/></g><path d="M242 50h16m-8-8v16M41 201h12m-6-6v12" stroke="currentColor" strokeWidth="2" opacity=".5"/></svg>
+                    <span>SHOW UP. BUILD UP.</span>
+                </div>
+            </section>
+
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-                <Glass tint="purple" hover gradientBorder gradientPreset="purple" className="holo-card">
-                    <StatTile
-                        label="This week"
-                        value={`${thisWeekCount}×`}
-                        delta={{ label: 'sessions', positive: thisWeekCount > 0 }}
-                        icon={Calendar}
-                        accent
-                    />
-                </Glass>
-                <Glass tint="neutral" hover gradientBorder gradientPreset="purpleToSteel" className="holo-card">
-                    <StatTile
-                        label="7-day volume"
-                        value={formatVolume(displayWeight(weekCmp.current))}
-                        delta={
-                            volumeDelta === null
-                                ? { label: unit, positive: false }
-                                : { label: `${volumeDelta >= 0 ? '+' : ''}${volumeDelta}% vs last wk`, positive: volumeDelta >= 0 }
-                        }
-                        icon={BarChart3}
-                    />
-                </Glass>
-                <Glass tint="neutral" hover gradientBorder gradientPreset="steel" className="holo-card">
-                    <StatTile
-                        label="All-time"
-                        value={String(workouts.length)}
-                        delta={{ label: 'workouts', positive: workouts.length > 0 }}
-                        icon={Dumbbell}
-                    />
-                </Glass>
-                <Glass tint="neutral" hover gradientBorder gradientPreset="aurora" className="holo-card">
-                    <StatTile
-                        label="Program"
-                        value={program ? `W${week}` : 'Off'}
-                        delta={{ label: program ? phase.name : 'none active', positive: Boolean(program) }}
-                        icon={Sparkles}
-                    />
-                </Glass>
+                <StatTile label="This week" value={`${thisWeekCount}×`} delta={{ label: 'sessions', positive: thisWeekCount > 0 }} icon={Calendar} accent />
+                <StatTile label="7-day volume" value={formatVolume(displayWeight(weekCmp.current))} delta={volumeDelta === null ? { label: unit, positive: false } : { label: `${volumeDelta >= 0 ? '+' : ''}${volumeDelta}% vs last wk`, positive: volumeDelta >= 0 }} icon={BarChart3} />
+                <StatTile label="All-time" value={String(workouts.length)} delta={{ label: 'workouts', positive: workouts.length > 0 }} icon={Dumbbell} />
+                <StatTile label="Program" value={program ? `W${week}` : 'Off'} delta={{ label: program ? phase.name : 'none active', positive: Boolean(program) }} icon={Sparkles} />
             </div>
 
-            <div className="gradient-divider" />
+            {streak > 0 && <p className="flex items-center gap-2 text-sm text-ink-300"><Flame className="h-4 w-4 text-accent" /> {streak} day{streak === 1 ? '' : 's'} of training momentum</p>}
 
             {/* ── Weekly digest ── */}
             <DigestCard digest={digest} />
@@ -476,6 +368,43 @@ export default function Home() {
                     </button>
                 </Glass>
             </div>
+            <Card>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                    <h2 className="font-display text-lg font-bold text-white">Recent sessions</h2>
+                    <Link to="/history" className="inline-flex items-center gap-1 text-sm text-accent">
+                        View history <ArrowUpRight className="h-4 w-4" />
+                    </Link>
+                </div>
+                {workouts.length ? (
+                    <ul className="divide-y divide-white/[0.07]">
+                        {workouts.slice(0, 3).map(workout => {
+                            const exerciseCount = new Set(workout.sets.map(set => set.exerciseId)).size;
+                            return (
+                                <li key={workout.id}>
+                                    <Link to={`/history/${workout.id}`} className="session-history-row">
+                                        <span className="session-history-icon"><Dumbbell className="h-5 w-5" /></span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-sm font-semibold text-white">{workout.name}</span>
+                                            <span className="text-xs text-ink-400">
+                                                {new Date(workout.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'}
+                                            </span>
+                                        </span>
+                                        <ChevronRight className="h-4 w-4 text-ink-400" />
+                                    </Link>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                ) : (
+                    <div className="flex items-start gap-3 rounded-xl bg-white/[0.025] p-4">
+                        <Clock className="mt-0.5 h-5 w-5 shrink-0 text-ink-400" />
+                        <div>
+                            <p className="text-sm font-medium text-white">Your first session starts the story.</p>
+                            <p className="mt-1 text-sm leading-relaxed text-ink-400">Choose a workout, log your weight and reps, then finish to save it. Your history and progress will grow from there.</p>
+                        </div>
+                    </div>
+                )}
+            </Card>
         </div>
     );
 }

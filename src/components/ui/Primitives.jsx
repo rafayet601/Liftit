@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useId } from 'react';
 import clsx from 'clsx';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 /**
@@ -26,7 +27,7 @@ export function SectionTitle({ eyebrow, title, description, action, className })
         <div className={clsx('mb-5 flex flex-wrap items-end justify-between gap-3', className)}>
             <div className="min-w-0">
                 {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
-                <h2 className="truncate text-2xl font-bold tracking-tight text-white md:text-[28px]">
+                <h2 className="text-2xl font-bold tracking-tight text-white md:text-[28px]">
                     {title}
                 </h2>
                 {description && (
@@ -49,7 +50,7 @@ export function PageHeader({ eyebrow, title, description, icon: Icon, actions })
                 )}
                 <div className="min-w-0">
                     {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
-                    <h1 className="truncate text-[28px] font-bold leading-tight tracking-tight text-white md:text-4xl">
+                    <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white md:text-4xl">
                         {title}
                     </h1>
                     {description && (
@@ -92,12 +93,12 @@ export function StatTile({ label, value, delta, icon: Icon, accent = false, clas
                 className,
             )}
         >
-            <div className="flex items-center justify-between">
-                <span className="eyebrow">{label}</span>
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-ink-400">{label}</span>
                 {Icon && (
                     <div
                         className={clsx(
-                            'flex h-8 w-8 items-center justify-center rounded-lg border border-white/5',
+                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/5',
                             accent ? 'bg-accent/20 text-accent' : 'bg-white/[0.03] text-zinc-400',
                         )}
                     >
@@ -105,7 +106,7 @@ export function StatTile({ label, value, delta, icon: Icon, accent = false, clas
                     </div>
                 )}
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span
                     className={clsx(
                         'font-display text-3xl font-bold tracking-tight tabular-nums md:text-4xl',
@@ -196,56 +197,92 @@ export function LoadingRing({ size = 24, className }) {
  * Closes on backdrop click and Escape.
  */
 export function Sheet({ open = true, onClose, title, children, wide = false }) {
+    const panelRef = useRef(null);
+    const titleId = useId();
+    const closeRef = useRef(onClose);
+    useEffect(() => { closeRef.current = onClose; }, [onClose]);
     useEffect(() => {
         if (!open) return undefined;
+        const previousFocus = document.activeElement;
+        const previousOverflow = document.body.style.overflow;
+        const panel = panelRef.current;
+        const focusable = () => Array.from(panel?.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]') || []).filter(el => el.tabIndex >= 0 && !el.closest('[hidden]'));
+        // Dialogs can stack (e.g. an exercise picker over a session summary).
+        // Only the top dialog owns keyboard navigation.
         const onKey = (e) => {
-            if (e.key === 'Escape') onClose?.();
+            const dialogs = document.querySelectorAll('[data-sheet-panel]');
+            if (dialogs[dialogs.length - 1] !== panel) return;
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRef.current?.(); }
+            if (e.key !== 'Tab') return;
+            const targets = focusable();
+            if (!targets.length) { e.preventDefault(); panel?.focus(); return; }
+            const first = targets[0], last = targets[targets.length - 1];
+            if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
         };
         document.addEventListener('keydown', onKey);
         document.body.style.overflow = 'hidden';
+        panel?.focus();
         return () => {
             document.removeEventListener('keydown', onKey);
-            document.body.style.overflow = '';
+            document.body.style.overflow = previousOverflow;
+            if (previousFocus?.isConnected) previousFocus.focus();
         };
-    }, [open, onClose]);
+    }, [open]);
 
     if (!open) return null;
-    return (
+    return createPortal(
         <div
-            className="fixed inset-0 z-50 flex items-end justify-center md:items-center"
-            role="dialog"
-            aria-modal="true"
-            aria-label={typeof title === 'string' ? title : undefined}
+            className="fixed inset-0 z-[70] flex items-end justify-center md:items-center"
         >
             <button
                 type="button"
-                aria-label="Close"
+                aria-label="Dismiss dialog"
+                tabIndex={-1}
                 onClick={onClose}
                 className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
             />
             <div
+                ref={panelRef}
+                data-sheet-panel
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
                 className={clsx(
                     'surface-strong relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-b-none rounded-t-2xl animate-slide-up md:max-h-[80vh] md:rounded-2xl md:animate-scale-in',
                     wide ? 'md:max-w-2xl' : 'md:max-w-lg',
                 )}
             >
                 <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4">
-                    <h2 className="font-display text-lg font-bold text-white">{title}</h2>
+                    <h2 id={titleId} className="font-display text-lg font-bold text-white">{title}</h2>
                     <button type="button" onClick={onClose} className="btn-ghost -mr-2 px-2 py-2" aria-label="Close">
                         <X className="h-5 w-5" />
                     </button>
                 </div>
                 <div className="overflow-y-auto p-5 pb-safe">{children}</div>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }
 
 /** Segmented control for small exclusive choices. */
-export function Segmented({ options, value, onChange, className }) {
+export function Segmented({ options, value, onChange, className, label }) {
+    const groupRef = useRef(null);
+    const mobileColumns = options.length > 3 && options.some(option => String(typeof option === 'string' ? option : option.label).length > 5) ? 3 : options.length;
+    const selectWithKeyboard = (event, index) => {
+        const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + direction + options.length) % options.length;
+        const option = options[next];
+        onChange(typeof option === 'string' ? option : option.value);
+        groupRef.current?.querySelectorAll('[role="radio"]')[next]?.focus();
+    };
     return (
-        <div className={clsx('segmented', className)} role="radiogroup">
-            {options.map((opt) => {
+        <div ref={groupRef} className={clsx('segmented', className)} role="radiogroup" aria-label={label} style={{ '--segmented-columns': options.length, '--segmented-mobile-columns': mobileColumns }}>
+            {options.map((opt, index) => {
                 const v = typeof opt === 'string' ? opt : opt.value;
                 const label = typeof opt === 'string' ? opt : opt.label;
                 const active = v === value;
@@ -255,6 +292,8 @@ export function Segmented({ options, value, onChange, className }) {
                         type="button"
                         role="radio"
                         aria-checked={active}
+                        tabIndex={active || (!options.some(option => (typeof option === 'string' ? option : option.value) === value) && index === 0) ? 0 : -1}
+                        onKeyDown={event => selectWithKeyboard(event, index)}
                         onClick={() => onChange(v)}
                         className={clsx('segmented-option', active && 'active')}
                     >
@@ -269,7 +308,7 @@ export function Segmented({ options, value, onChange, className }) {
 /** Numeric stepper with big touch targets — the core gym input. */
 export function Stepper({ value, onInput, onBlur, onStep, step = 1, min = 0, label, inputMode = 'decimal' }) {
     return (
-        <div className="flex items-center gap-2">
+        <div className="gym-stepper">
             <button
                 type="button"
                 className="increment-btn"
@@ -278,7 +317,7 @@ export function Stepper({ value, onInput, onBlur, onStep, step = 1, min = 0, lab
             >
                 −
             </button>
-            <div className="min-w-0 flex-1">
+            <div className="gym-stepper-input">
                 <input
                     type="text"
                     inputMode={inputMode}

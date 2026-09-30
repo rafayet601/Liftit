@@ -44,7 +44,7 @@ export default function MobileNav() {
                             <Link
                                 key={item.path}
                                 to={item.path}
-                                unstable_viewTransition
+                                viewTransition
                                 onClick={() => hapticSelection()}
                                 aria-current={isActive ? 'page' : undefined}
                                 className={clsx(

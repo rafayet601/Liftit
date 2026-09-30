@@ -26,7 +26,7 @@
         /* Text */
         --text-primary: #f7f6f4;
         --text-secondary: #a3a19b;
-        --text-muted: #7c7a75;
+        --text-muted: #9b99a5;
         --text-faint: #44433f;
 
         /* Hairlines */
@@ -34,7 +34,7 @@
         --border-strong: rgba(255, 255, 255, 0.12);
 
         /* Brand */
-        --accent: #8b5cf6;
+        --accent: #b8a0ff;
         --accent-strong: #7c3aed;
         --accent-soft: rgba(139, 92, 246, 0.12);
         --accent-glow: rgba(139, 92, 246, 0.4);
@@ -297,7 +297,7 @@ body::before {
     top: -200px;
     right: -100px;
     background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
-    animation: purple-breathe 8s ease-in-out infinite;
+    animation: none;
 }
 
 body::after {
@@ -306,7 +306,7 @@ body::after {
     bottom: -150px;
     left: -120px;
     background: radial-gradient(circle, rgba(143, 176, 207, 0.08) 0%, transparent 70%);
-    animation: purple-breathe-2 11s ease-in-out infinite;
+    animation: none;
 }
 
 /* Route transitions via native browser View Transitions */
@@ -320,13 +320,13 @@ body::after {
 @layer components {
     /* ==== Card surfaces — glassmorphic ==== */
     .surface {
-        @apply relative rounded-2xl border border-white/[0.08] bg-ink-950/45 backdrop-blur-xl;
+        @apply relative rounded-2xl border border-white/[0.09] bg-ink-900;
         box-shadow: 
             0 1px 0 rgba(255, 255, 255, 0.05) inset,
             0 12px 28px -18px rgba(0, 0, 0, 0.55);
     }
     .surface-strong {
-        @apply relative rounded-2xl border border-white/[0.12] bg-ink-900/60 backdrop-blur-2xl;
+        @apply relative rounded-2xl border border-white/[0.12] bg-ink-900;
         box-shadow: 
             0 1px 0 rgba(255, 255, 255, 0.06) inset,
             0 24px 60px -28px rgba(0, 0, 0, 0.65);
@@ -446,7 +446,8 @@ body::after {
         @apply inline-flex select-none items-center justify-center gap-2 rounded-xl border border-transparent px-4 py-2.5 text-sm font-semibold tracking-tight transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
     }
     .btn-primary {
-        @apply btn bg-gradient-purple text-ink-950;
+        @apply btn text-ink-950;
+        background: #c1adff;
         box-shadow: 0 8px 22px -10px var(--accent-glow);
         transition: brightness 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
     }
@@ -685,10 +686,11 @@ body::after {
 
     /* ==== Segmented control ==== */
     .segmented {
-        @apply flex rounded-xl border border-white/10 bg-white/[0.03] p-1;
+        grid-template-columns: repeat(var(--segmented-mobile-columns), minmax(0, 1fr));
+        @apply grid gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1;
     }
     .segmented-option {
-        @apply flex-1 rounded-lg px-3 py-2 text-center text-sm font-semibold text-ink-400 transition-all;
+        @apply min-w-0 rounded-lg px-2 py-2 text-center text-xs font-semibold text-ink-400 transition-all sm:px-3 sm:text-sm;
     }
     .segmented-option.active {
         @apply bg-ink-700 text-white shadow-sm;
@@ -960,7 +962,7 @@ body::after {
 }
 
 .lg-orb-animated {
-    animation: purple-breathe 8s ease-in-out infinite;
+    animation: none;
 }
 
 /* ============================================================
@@ -1122,4 +1124,64 @@ body::after {
 }
 .glass-prismatic:hover::before {
     transform: translateX(120%);
+}
+
+/* Training surfaces and page composition */
+@layer components {
+    .training-panel {
+        @apply relative border border-white/[0.09] bg-ink-900;
+        box-shadow: 0 1px 0 rgba(255,255,255,.025) inset;
+    }
+    .training-panel-purple { border-color: rgba(184,160,255,.2); }
+    .training-panel-steel { border-color: rgba(143,176,207,.16); }
+    .training-panel-gold { border-color: rgba(251,191,36,.18); }
+    .training-panel-success { border-color: rgba(74,222,128,.2); }
+    .training-panel-hover { transition: border-color 180ms ease; }
+    .training-panel-hover:hover { border-color: rgba(184,160,255,.32); }
+    .training-panel > header { margin-bottom: 0; }
+    .skip-link {
+        @apply fixed left-4 top-4 z-[100] rounded-lg bg-accent px-4 py-3 font-semibold text-ink-950;
+        transform: translateY(-180%);
+    }
+    .skip-link:focus { transform: translateY(0); }
+    .mobile-topbar {
+        @apply flex items-center justify-between border-b border-white/[0.07] px-4 py-3;
+        padding-top: max(12px, env(safe-area-inset-top));
+        background: var(--bg);
+    }
+    .topbar-action { @apply flex h-11 w-11 items-center justify-center rounded-xl text-ink-400 hover:bg-white/5 hover:text-accent; }
+    .topbar-action[aria-current='page'] { @apply bg-accent/10 text-accent; }
+    .dashboard-heading { @apply flex flex-wrap items-center justify-between gap-4; }
+    .dashboard-date { @apply text-xs font-medium text-ink-400; }
+    .session-hero {
+        @apply relative flex overflow-hidden rounded-3xl border border-accent/20;
+        background: linear-gradient(115deg, #201b30, #17141f 65%, #242035);
+    }
+    .session-hero-content { @apply relative z-10 flex-1 p-6 md:p-8; }
+    .session-hero-art { @apply hidden w-64 shrink-0 flex-col items-center justify-center self-stretch text-accent lg:flex; }
+    .session-hero-art svg { width: 240px; }
+    .session-hero-art span { @apply -mt-3 mb-6 text-[10px] font-semibold tracking-[.24em] text-accent/70; }
+    .session-history-row { @apply flex items-center gap-3 rounded-xl py-3 transition-colors hover:bg-white/[.03]; }
+    .session-history-icon { @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/[.07] bg-white/[.025] text-ink-400; }
+    .onboarding-layout { @apply relative mx-auto grid min-h-dvh w-full max-w-6xl items-center gap-12 px-5 py-8 lg:grid-cols-2 lg:gap-20 lg:px-12; }
+    .onboarding-story { @apply hidden lg:block; }
+    .onboarding-story h2 { @apply mt-8 font-display text-6xl font-bold leading-[1.08] tracking-tight text-white; }
+    .onboarding-story h2 span { @apply text-accent; }
+    .onboarding-story p { @apply mt-6 max-w-sm text-base leading-relaxed text-ink-400; }
+    .onboarding-step { @apply w-full; }
+    .onboarding-progress { @apply mb-6 flex items-center justify-between text-xs text-ink-400; }
+    .onboarding-footer { @apply mt-6 flex flex-wrap items-center justify-between gap-3; }
+    .onboarding-step .training-panel { @apply p-6 md:p-8; }
+}
+
+@layer components {
+    .gym-stepper { @apply grid grid-cols-2 gap-1.5 sm:flex sm:items-center sm:gap-2; }
+    .gym-stepper-input { @apply order-first col-span-2 min-w-0 sm:order-none sm:flex-1; }
+    .gym-stepper .increment-btn { @apply w-full sm:w-11; }
+    .gym-stepper .set-input { min-width: 0; }
+    .segmented-option { min-height: 44px; }
+}
+
+@media (min-width: 640px) {
+    .segmented { grid-template-columns: repeat(var(--segmented-columns), minmax(0, 1fr)); }
 }
