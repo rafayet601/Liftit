@@ -33,12 +33,12 @@ export default function SetRow({ set, index, ghost, onChange, onComplete, onUndo
     const draftUnit = useRef(unit);
     useEffect(() => {
         const v = set.weight > 0 ? String(displayWeight(set.weight)) : '';
-        if (draftUnit.current !== unit || Number(weightRef.current) !== Number(v)) {
+        if (draftUnit.current !== unit || toKg(Number(weightRef.current)) !== set.weight) {
             weightRef.current = v;
             _setWeightDraft(v);
         }
         draftUnit.current = unit;
-    }, [set.weight, displayWeight, unit]);
+    }, [set.weight, displayWeight, toKg, unit]);
 
     useEffect(() => {
         const v = set.reps > 0 ? String(set.reps) : '';

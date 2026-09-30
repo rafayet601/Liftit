@@ -29,11 +29,11 @@ describe('Gym logging', () => {
         render(wrap(<LoggingRow />));
         fireEvent.change(screen.getByLabelText('weight in kg'), { target: { value: '60.' } });
         expect(screen.getByLabelText('weight in kg')).toHaveValue('60.');
-        fireEvent.change(screen.getByLabelText('weight in kg'), { target: { value: '60.5' } });
+        fireEvent.change(screen.getByLabelText('weight in kg'), { target: { value: '60.55' } });
         fireEvent.change(screen.getByLabelText('reps', { exact: true }), { target: { value: '8' } });
         fireEvent.click(screen.getByRole('button', { name: 'Complete set 1' }));
         expect(screen.getByRole('button', { name: 'Undo set 1' })).toBeEnabled();
-        expect(screen.getByLabelText('weight in kg')).toHaveValue('60.5');
+        expect(screen.getByLabelText('weight in kg')).toHaveValue('60.55');
         fireEvent.click(screen.getByRole('button', { name: 'Undo set 1' }));
         expect(screen.getByRole('button', { name: 'Complete set 1' })).toBeEnabled();
     });
