@@ -1,5 +1,5 @@
-# Quality gate. Deployment is handled by Cloudflare Pages' own Git
-# integration, so this workflow deliberately holds no cloud credentials.
+# Validate every change, then publish passing main commits to the existing
+# Cloudflare Pages Direct Upload project. PRs never receive deploy credentials.
 name: CI
 
 on:
@@ -38,3 +38,39 @@ jobs:
           test -f dist/sw.js || { echo "::error::dist/sw.js missing — PWA build is broken"; exit 1; }
           test -f dist/index.html
           echo "service worker present: $(wc -c < dist/sw.js) bytes"
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build production app
+        run: npm run build
+        env:
+          VITE_API_URL: /api
+
+      - name: Verify production artifacts
+        run: |
+          test -f dist/index.html
+          test -f dist/sw.js
+          test -f functions/api/[[route]].js
+
+      - name: Deploy to existing Liftit Pages project
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=liftit --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
