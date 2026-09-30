@@ -378,7 +378,7 @@ function ActiveSession() {
     return (
         <div className="space-y-5 animate-fade-in">
             {/* Header */}
-            <div className="sticky top-0 z-50 -mx-4 px-4 py-3 bg-ink-950/65 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.4)] flex flex-wrap items-center justify-between gap-3 md:mx-0 md:rounded-2xl md:border md:bg-ink-900/60">
+            <div className="sticky top-0 z-30 -mx-4 px-4 py-3 bg-ink-950/95 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.4)] flex flex-wrap items-center justify-between gap-3 md:mx-0 md:rounded-2xl md:border md:bg-ink-900/60">
                 <div className="min-w-0">
                     <div className="eyebrow mb-0.5 flex items-center gap-2">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />

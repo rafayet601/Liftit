@@ -222,7 +222,7 @@ export function weeklyVolumeTarget(workouts, program, resolveExercise, now = new
  *            programWeek, message }.
  * `message` is assembled only from the computed values in this object.
  */
-export function weeklyDigest(workouts, program, now = new Date()) {
+export function weeklyDigest(workouts, program, now = new Date(), { unit = 'kg', displayWeight = value => value } = {}) {
     const t = now.getTime();
     const volumeCmp = weeklyVolumeComparison(workouts, now);
     const volumeDeltaPct =
@@ -259,7 +259,7 @@ export function weeklyDigest(workouts, program, now = new Date()) {
     if (sessions > 0 || volumeCmp.current > 0) {
         parts.push(
             volumeDeltaPct === null
-                ? `${Math.round(volumeCmp.current).toLocaleString()} kg volume this week (no prior week to compare)`
+                ? `${Math.round(displayWeight(volumeCmp.current)).toLocaleString()} ${unit} volume this week (no prior week to compare)`
                 : `volume ${volumeDeltaPct >= 0 ? '+' : ''}${volumeDeltaPct}% vs last week`,
         );
     }

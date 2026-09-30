@@ -5,8 +5,6 @@ import { db } from '../data/db';
 import { generateProgram, GOALS } from '../engine/generator';
 import { Segmented, Card } from '../components/ui/Primitives';
 import { hapticSuccess } from '../lib/platform';
-import WaveDistortion from '../components/ui/WaveDistortion';
-import LinearGradient from '../components/ui/LinearGradient';
 import Glass from '../components/ui/Glass';
 
 /**
@@ -51,45 +49,21 @@ export default function Onboarding() {
     const back = () => setStep((s) => Math.max(s - 1, 0));
 
     return (
-        <div className="safe-top safe-bottom relative flex min-h-dvh flex-col bg-transparent px-5 py-8 overflow-hidden">
-            <WaveDistortion
-                preset="aurora"
-                amplitude={0.06}
-                frequency={2.0}
-                speed={0.3}
-                opacity={0.4}
-                style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    zIndex: 0,
-                }}
-            />
-
-            <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
-                {/* Brand + progress */}
-                <div className="mb-10 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-purple text-ink-950">
-                            <Dumbbell className="h-4.5 w-4.5 h-5 w-5" strokeWidth={2.4} />
-                        </span>
-                        <span className="font-display text-lg font-bold text-white">
-                            Liftit<span className="text-accent">.</span>
-                        </span>
-                    </div>
-                    <div className="flex gap-1.5">
-                        {STEPS.map((s, i) => (
-                            <span
-                                key={s}
-                                className={`h-1.5 w-6 rounded-full transition-all duration-300 ${i <= step ? 'bg-accent' : 'bg-white/10'}`}
-                                style={i <= step ? { boxShadow: '0 0 8px rgba(139,92,246,0.5)' } : undefined}
-                            />
-                        ))}
-                    </div>
+        <div className="onboarding-layout safe-top safe-bottom">
+            <div className="onboarding-story">
+                <div className="flex items-center gap-3 text-xl font-bold text-white"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-ink-950"><Dumbbell className="h-6 w-6" /></span>TRAIN WITH INTENT</div>
+                <div className="eyebrow mt-16">Built for your next best</div>
+                <h2>Small steps.<br /><span>Stronger you.</span></h2>
+                <p>A clear plan. A simple training log. Progress you can see. Make every session count, at your own pace.</p>
+                <div className="mt-10 flex items-center gap-3 text-sm text-ink-300"><span className="h-2 w-2 rounded-full bg-emerald-400" />Works offline · Your data stays yours</div>
+            </div>
+            <div className="onboarding-step">
+                <div className="mb-8 flex items-center gap-2.5"><Dumbbell className="h-6 w-6 text-accent" /><span className="font-display text-xl font-bold text-white">Liftit.</span></div>
+                <div className="onboarding-progress">
+                    <span>Step {step + 1} of {STEPS.length}</span>
+                    <div className="flex gap-1.5" aria-hidden="true">{STEPS.map((s, i) => <span key={s} className={`h-1 w-8 rounded-full ${i <= step ? 'bg-accent' : 'bg-white/10'}`} />)}</div>
                 </div>
-
-                <div className="flex flex-1 flex-col justify-center animate-fade-in" key={step}>
+                <div className="animate-fade-in" key={step}>
                     {step === 0 && (
                         <StepShell
                             title="What should we call you?"
@@ -97,6 +71,8 @@ export default function Onboarding() {
                         >
                             <input
                                 autoFocus
+                                autoComplete="given-name"
+                                maxLength={60}
                                 type="text"
                                 value={form.name}
                                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -111,6 +87,7 @@ export default function Onboarding() {
                     {step === 1 && (
                         <StepShell title="How do you load the bar?" subtitle="You can switch anytime in Settings.">
                             <Segmented
+                                label="Weight unit"
                                 value={form.units}
                                 onChange={(units) => setForm((f) => ({ ...f, units }))}
                                 options={[
@@ -130,7 +107,8 @@ export default function Onboarding() {
                                 <div>
                                     <div className="eyebrow mb-2">Experience</div>
                                     <Segmented
-                                        value={form.experience}
+                                        label="Experience"
+                                value={form.experience}
                                         onChange={(experience) => setForm((f) => ({ ...f, experience }))}
                                         options={[
                                             { value: 'beginner', label: 'Beginner' },
@@ -142,7 +120,8 @@ export default function Onboarding() {
                                 <div>
                                     <div className="eyebrow mb-2">Main goal</div>
                                     <Segmented
-                                        value={form.goal}
+                                        label="Main goal"
+                                value={form.goal}
                                         onChange={(goal) => setForm((f) => ({ ...f, goal }))}
                                         options={Object.entries(GOALS).map(([value, g]) => ({
                                             value,
@@ -153,7 +132,8 @@ export default function Onboarding() {
                                 <div>
                                     <div className="eyebrow mb-2">Days per week</div>
                                     <Segmented
-                                        value={form.daysPerWeek}
+                                        label="Days per week"
+                                value={form.daysPerWeek}
                                         onChange={(daysPerWeek) => setForm((f) => ({ ...f, daysPerWeek }))}
                                         options={[2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))}
                                     />
@@ -180,13 +160,13 @@ export default function Onboarding() {
                 </div>
 
                 {/* Nav */}
-                <div className="mt-8 flex items-center justify-between">
+                <div className="onboarding-footer">
                     {step > 0 ? (
                         <button type="button" onClick={back} className="btn-ghost">
                             <ArrowLeft className="h-4 w-4" /> Back
                         </button>
                     ) : (
-                        <Link to="/login" className="text-xs text-ink-500 hover:text-white">
+                        <Link to="/login" className="py-3 text-sm text-ink-400 hover:text-white">
                             Have an account? Sign in
                         </Link>
                     )}
@@ -198,20 +178,6 @@ export default function Onboarding() {
                 </div>
             </div>
 
-            <LinearGradient
-                preset="purpleToSteel"
-                animated
-                variant="strip"
-                style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: '2px',
-                    borderRadius: 0,
-                    opacity: 0.6,
-                }}
-            />
         </div>
     );
 }
@@ -220,12 +186,7 @@ function StepShell({ title, subtitle, children }) {
     return (
         <Glass
             tint="purple"
-            glow
-            wave
-            wavePreset="purple"
-            gradientBorder
-            gradientPreset="purpleToSteel"
-            className="w-full max-w-md mx-auto my-auto animate-scale-in"
+            className="w-full animate-scale-in"
         >
             <h1 className="font-display text-3xl font-bold leading-tight tracking-tight text-white">
                 {title}

@@ -105,7 +105,7 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                             onChange({ isWarmup: !set.isWarmup });
                         }}
                         className={clsx(
-                            'rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest transition-colors',
+                            'min-h-11 min-w-11 rounded-lg border px-2 py-1 text-[11px] font-bold uppercase tracking-widest transition-colors',
                             set.isWarmup
                                 ? 'border-amber-400/40 bg-amber-400/15 text-amber-300'
                                 : 'border-white/[0.07] bg-white/[0.02] text-ink-600 hover:text-ink-400',
@@ -122,7 +122,7 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                 )}
             </div>
 
-            <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
                 <div>
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-ink-500">
                         {unit}
@@ -135,7 +135,6 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                         onBlur={commitWeight}
                         onStep={stepWeight}
                     />
-                    <PlateCalculator weightKg={set.weight} />
                 </div>
                 <div>
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-ink-500">
@@ -172,6 +171,8 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                 </button>
             </div>
 
+            <PlateCalculator weightKg={set.weight} />
+
             {/* RPE */}
             <div className="mt-2 flex items-center gap-1.5">
                 <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-ink-500">
@@ -180,13 +181,15 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                 {RPE_OPTIONS.map((r) => (
                     <button
                         key={r}
+                        aria-pressed={set.rpe === r}
+                        aria-label={`RPE ${r}`}
                         type="button"
                         onClick={() => {
                             hapticLight();
                             onChange({ rpe: set.rpe === r ? 0 : r });
                         }}
                         className={clsx(
-                            'h-8 flex-1 rounded-lg border text-xs font-bold tabular-nums transition-colors',
+                            'h-11 flex-1 rounded-lg border text-xs font-bold tabular-nums transition-colors',
                             set.rpe === r
                                 ? 'border-accent/50 bg-accent/15 text-accent'
                                 : 'border-white/[0.07] bg-white/[0.02] text-ink-500 hover:text-white',
