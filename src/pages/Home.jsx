@@ -35,6 +35,7 @@ const LazyWeeklyVolumeBarChart = React.lazy(() =>
 import { useActiveSession } from '../hooks/useActiveSession';
 import LinearGradient from '../components/ui/LinearGradient';
 import Glass from '../components/ui/Glass';
+import ShaderBackground from '../components/ui/ShaderBackground';
 
 /**
  * Home — everything is computed from real logs. New users see honest
@@ -195,6 +196,7 @@ export default function Home() {
             </header>
 
             <section className="session-hero" aria-label="Your next workout">
+                <ShaderBackground variant="hero" />
                 <div className="session-hero-content">
                     <div className="flex flex-wrap items-center gap-2 mb-5">
                         <Chip tone="accent">{session ? 'In progress' : 'Up next'}</Chip>

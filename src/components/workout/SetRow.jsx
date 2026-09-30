@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import clsx from 'clsx';
 import { useUnit } from '../../contexts/UnitContext';
 import { Stepper } from '../ui/Primitives';
@@ -13,14 +13,14 @@ const RPE_OPTIONS = [6, 7, 8, 9, 10];
  * Parent state stores KG; drafts mirror the visible text so typing decimals
  * never fights conversions. Ghost values show last session's matching set.
  */
-export default function SetRow({ set, index, ghost, onChange, onComplete }) {
+export default function SetRow({ set, index, ghost, onChange, onComplete, onUndo }) {
     const { unit, displayWeight, toKg } = useUnit();
-    const [weightDraft, _setWeightDraft] = useState('');
-    const [repsDraft, _setRepsDraft] = useState('');
+    const [weightDraft, _setWeightDraft] = useState(() => set.weight > 0 ? String(displayWeight(set.weight)) : '');
+    const [repsDraft, _setRepsDraft] = useState(() => set.reps > 0 ? String(set.reps) : '');
     // Refs mirror the drafts so rapid stepper taps never read stale state
     // (effects don't run between two taps in the same frame).
-    const weightRef = useRef('');
-    const repsRef = useRef('');
+    const weightRef = useRef(weightDraft);
+    const repsRef = useRef(repsDraft);
     const setWeightDraft = (v) => {
         weightRef.current = v;
         _setWeightDraft(v);
@@ -30,11 +30,15 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
         _setRepsDraft(v);
     };
 
+    const draftUnit = useRef(unit);
     useEffect(() => {
         const v = set.weight > 0 ? String(displayWeight(set.weight)) : '';
-        weightRef.current = v;
-        _setWeightDraft(v);
-    }, [set.weight, displayWeight]);
+        if (draftUnit.current !== unit || Number(weightRef.current) !== Number(v)) {
+            weightRef.current = v;
+            _setWeightDraft(v);
+        }
+        draftUnit.current = unit;
+    }, [set.weight, displayWeight, unit]);
 
     useEffect(() => {
         const v = set.reps > 0 ? String(set.reps) : '';
@@ -46,7 +50,7 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
 
     const stepWeight = (delta) => {
         hapticLight();
-        const shown = Number(weightRef.current) || displayWeight(ghost?.weight ?? 0) || 0;
+        const shown = weightRef.current === '' ? displayWeight(ghost?.weight ?? 0) : Number(weightRef.current);
         const next = Math.max(0, Math.round((shown + delta) * 100) / 100);
         setWeightDraft(next ? String(next) : '');
         onChange({ weight: toKg(next) });
@@ -54,13 +58,14 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
 
     const stepReps = (delta) => {
         hapticLight();
-        const next = Math.max(0, (Number(repsRef.current) || ghost?.reps || 0) + delta);
+        const next = Math.max(0, (repsRef.current === '' ? ghost?.reps ?? 0 : Number(repsRef.current)) + delta);
         setRepsDraft(next ? String(next) : '');
         onChange({ reps: next });
     };
 
     const commitWeight = () => {
         const n = Number(weightDraft);
+        if (!Number.isFinite(n)) setWeightDraft('');
         onChange({ weight: Number.isFinite(n) && n > 0 ? toKg(n) : 0 });
     };
 
@@ -69,12 +74,24 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
         onChange({ reps: Number.isFinite(n) && n > 0 ? n : 0 });
     };
 
-    const canComplete = set.reps > 0 && set.weight >= 0;
+    const inputWeight = (raw) => {
+        const value = raw.replace(',', '.');
+        if (!/^\d*\.?\d*$/.test(value)) return;
+        setWeightDraft(value);
+        const number = Number(value);
+        if (Number.isFinite(number)) onChange({ weight: toKg(number) });
+    };
+    const inputReps = (value) => {
+        if (!/^\d*$/.test(value)) return;
+        setRepsDraft(value);
+        if (Number.isSafeInteger(Number(value))) onChange({ reps: Number(value) });
+    };
+    const canComplete = Number.isSafeInteger(Number(repsDraft)) && Number(repsDraft) > 0 && Number.isFinite(Number(weightDraft)) && Number(weightDraft) >= 0;
 
     const complete = () => {
         if (!canComplete) return;
         hapticSuccess();
-        onComplete();
+        onComplete({ weight: toKg(Number(weightDraft)), reps: Number(repsDraft) });
     };
 
     return (
@@ -131,7 +148,7 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                         value={weightDraft}
                         label={`weight in ${unit}`}
                         step={weightStep}
-                        onInput={setWeightDraft}
+                        onInput={inputWeight}
                         onBlur={commitWeight}
                         onStep={stepWeight}
                     />
@@ -145,16 +162,17 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                         label="reps"
                         step={1}
                         inputMode="numeric"
-                        onInput={setRepsDraft}
+                        onInput={inputReps}
                         onBlur={commitReps}
                         onStep={stepReps}
                     />
                 </div>
                 <button
                     type="button"
-                    onClick={complete}
-                    disabled={!canComplete || set.completed}
-                    aria-label={`Complete set ${index + 1}`}
+                    onClick={set.completed ? onUndo : complete}
+                    disabled={!set.completed && !canComplete}
+                    aria-label={`${set.completed ? 'Undo' : 'Complete'} set ${index + 1}`}
+                    aria-pressed={set.completed}
                     className={clsx(
                         'flex h-12 w-12 items-center justify-center rounded-xl border transition-all active:scale-90',
                         set.completed
@@ -171,10 +189,23 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                 </button>
             </div>
 
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-ink-400">
+                    {set.completed ? 'Logged · tap the check to undo' : canComplete ? 'Ready to log' : 'Enter reps to log · 0 weight is allowed'}
+                </span>
+                {ghost && !set.completed && (
+                    <button type="button" className="btn-ghost min-h-11 px-2 text-xs" onClick={() => onChange({ weight: ghost.weight, reps: ghost.reps, rpe: ghost.rpe || 0 })}>
+                        <Copy className="h-3.5 w-3.5" /> Use last set
+                    </button>
+                )}
+            </div>
             <PlateCalculator weightKg={set.weight} />
 
             {/* RPE */}
-            <div className="mt-2 flex items-center gap-1.5">
+            <details className="mt-2">
+                <summary className="min-h-11 cursor-pointer py-3 text-xs font-semibold text-ink-400">Effort (RPE) · {set.rpe ? `${set.rpe}/10` : 'optional'}</summary>
+                <p className="mb-2 text-xs leading-relaxed text-ink-400">Rate how hard this set felt. Higher numbers mean more effort. Leave it unset if you’re unsure.</p>
+                <div className="flex items-center gap-1.5">
                 <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-ink-500">
                     RPE
                 </span>
@@ -198,7 +229,8 @@ export default function SetRow({ set, index, ghost, onChange, onComplete }) {
                         {r}
                     </button>
                 ))}
-            </div>
+                </div>
+            </details>
         </div>
     );
 }

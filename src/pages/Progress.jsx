@@ -32,10 +32,9 @@ import {
 import { acwr, applyFatigueContext, applyReadinessContext } from '../engine/fatigue';
 import { useRecovery } from '../contexts/RecoveryContext';
 import { MUSCLE_GROUPS } from '../data/exercises';
-import { Card, Chip, EmptyState, PageHeader } from '../components/ui/Primitives';
+import { Card, Chip, EmptyState, PageHeader, Segmented } from '../components/ui/Primitives';
 import SuggestionWhy, { WhyButton } from '../components/workout/SuggestionWhy';
 import BodyweightCard from '../components/progress/BodyweightCard';
-import Glass from '../components/ui/Glass';
 
 /**
  * Progress — e1RM trend for any logged exercise, muscle-group balance,
@@ -58,12 +57,14 @@ function ProgressionBadge({ trend, priority }) {
     };
     
     const Icon = iconMap[priority] || Zap;
+    if (!trend) return null;
+    const label = { starting: 'Building baseline', insufficient_data: 'More sessions needed' }[trend] ?? trend.replaceAll('_', ' ');
     const className = bgMap[priority] || bgMap.info;
     
     return (
         <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${className}`}>
             <Icon className="h-3.5 w-3.5" />
-            <span className="capitalize">{trend}</span>
+            <span className="capitalize">{label}</span>
         </div>
     );
 }
@@ -145,20 +146,26 @@ export default function Progress() {
 
     const trackedExercises = useMemo(
         () =>
-            recentExerciseIds(workouts, 30)
+            recentExerciseIds(workouts, Infinity)
                 .map((id) => db.exercises.byId(id))
                 .filter(Boolean),
         [workouts],
     );
     const [selectedId, setSelectedId] = useState(null);
-    const activeId = selectedId ?? trackedExercises[0]?.id ?? null;
+    const activeId = trackedExercises.some(exercise => exercise.id === selectedId) ? selectedId : trackedExercises[0]?.id ?? null;
 
-    const trendLimit = timeframe === '30days' ? 30 : timeframe === '12weeks' ? 84 : 365;
+    const chartWorkouts = useMemo(() => {
+        if (timeframe === 'alltime') return workouts;
+        const cutoff = new Date();
+        cutoff.setHours(0, 0, 0, 0);
+        cutoff.setDate(cutoff.getDate() - (timeframe === '30days' ? 29 : 83));
+        return workouts.filter(workout => new Date(workout.startedAt) >= cutoff);
+    }, [workouts, timeframe]);
 
     const trend = useMemo(
         () =>
             activeId
-                ? e1rmTrend(workouts, activeId, trendLimit).map((p) => ({
+                ? e1rmTrend(chartWorkouts, activeId, Infinity).map((p) => ({
                       ...p,
                       e1rmDisplay: displayWeight(p.e1rm),
                       label: new Date(p.date).toLocaleDateString(undefined, {
@@ -167,7 +174,7 @@ export default function Progress() {
                       }),
                   }))
                 : [],
-        [workouts, activeId, displayWeight, trendLimit],
+        [chartWorkouts, activeId, displayWeight],
     );
 
     const progressionData = useMemo(() => {
@@ -190,7 +197,7 @@ export default function Progress() {
     const volumeSeries = useMemo(
         () =>
             metric === 'volume' && activeId
-                ? volumeTrend(workouts, activeId, trendLimit).map((p) => ({
+                ? volumeTrend(chartWorkouts, activeId, Infinity).map((p) => ({
                       ...p,
                       volumeDisplay: Math.round(displayWeight(p.volume)),
                       label: new Date(p.date).toLocaleDateString(undefined, {
@@ -199,7 +206,7 @@ export default function Progress() {
                       }),
                   }))
                 : [],
-        [metric, workouts, activeId, displayWeight, trendLimit],
+        [metric, chartWorkouts, activeId, displayWeight],
     );
 
     const muscles = useMemo(
@@ -267,14 +274,13 @@ export default function Progress() {
                 />
             )}
 
-            <Glass tint="neutral" glow wave wavePreset="purple" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.2)' }}>
-            <Card className="space-y-4 glass-card-glow border-accent/20 mesh-border">
+            <Card className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="font-display text-lg font-bold text-white">
                         {metric === 'e1rm' ? 'Estimated 1RM' : 'Volume per session'}
                     </h2>
                     <div className="flex gap-1.5">
-                        <Chip>Epley + Brzycki blend</Chip>
+                        {metric === 'e1rm' && <Chip>Estimated strength</Chip>}
                         {progressionData.analysis && (
                             <ProgressionBadge 
                                 trend={progressionData.analysis.trend} 
@@ -284,76 +290,28 @@ export default function Progress() {
                     </div>
                 </div>
                 
-                <div className="flex flex-wrap items-center gap-4 border-b border-white/10 pb-3">
-                    <div className="flex gap-1.5">
-                        {[
-                            { key: 'e1rm', label: 'Strength' },
-                            { key: 'volume', label: 'Volume' },
-                        ].map(({ key, label }) => (
-                            <button
-                                key={key}
-                                onClick={() => setMetric(key)}
-                                className={clsx(
-                                    'text-xs font-semibold px-2 py-1 rounded transition-colors',
-                                    metric === key
-                                        ? 'text-accent border-b-2 border-accent'
-                                        : 'text-zinc-400 hover:text-zinc-300'
-                                )}
-                            >
-                                {label}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex gap-1.5">
-                        {[
-                            { key: '30days', label: '30 days' },
-                            { key: '12weeks', label: '12 weeks' },
-                            { key: 'alltime', label: 'All time' }
-                        ].map(({ key, label }) => (
-                            <button
-                                key={key}
-                                onClick={() => setTimeframe(key)}
-                                className={clsx(
-                                    'text-xs font-semibold px-2 py-1 rounded transition-colors',
-                                    timeframe === key
-                                        ? 'text-accent border-b-2 border-accent'
-                                        : 'text-zinc-400 hover:text-zinc-300'
-                                )}
-                            >
-                                {label}
-                            </button>
-                        ))}
-                    </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <Segmented label="Progress metric" value={metric} onChange={setMetric} options={[{ value: 'e1rm', label: 'Strength' }, { value: 'volume', label: 'Volume' }]} />
+                    <Segmented label="Progress date range" value={timeframe} onChange={setTimeframe} options={[{ value: '30days', label: '30 days' }, { value: '12weeks', label: '12 weeks' }, { value: 'alltime', label: 'All time' }]} />
                 </div>
-
-                <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
-                    {trackedExercises.slice(0, 12).map((e) => (
-                        <button
-                            key={e.id}
-                            type="button"
-                            onClick={() => setSelectedId(e.id)}
-                            className={clsx(
-                                'shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors',
-                                e.id === activeId
-                                    ? 'border-accent/40 bg-accent/20 text-accent shadow-glass-glow-purple'
-                                    : 'border-white/[0.06] bg-white/[0.01] text-ink-400 hover:border-white/20 hover:bg-white/[0.04]',
-                            )}
-                        >
-                            {e.name}
-                        </button>
-                    ))}
+                <div>
+                    <label htmlFor="progress-exercise" className="mb-2 block text-xs font-semibold text-ink-400">Exercise</label>
+                    <select id="progress-exercise" className="input" value={activeId ?? ''} onChange={event => setSelectedId(event.target.value)}>
+                        {trackedExercises.map(exercise => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}
+                    </select>
                 </div>
+                <p className="text-xs leading-relaxed text-ink-400">{metric === 'e1rm' ? 'Estimated from your best logged working set, rather than a tested maximum.' : 'Total working weight × reps for this exercise. Warmup sets are excluded.'}</p>
                 {(() => {
                     const chartData = metric === 'e1rm' ? trend : volumeSeries;
                     if (chartData.length < 2) {
                         return (
                             <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-ink-500">
-                                Log this lift in at least two sessions to draw a trend line.
+                                {chartData.length === 1 ? 'One session in this range. Log another session to see how this lift changes.' : 'No sessions for this lift in this date range. Choose a wider range or log a workout.'}
                             </p>
                         );
                     }
                     const dataKey = metric === 'e1rm' ? 'e1rmDisplay' : 'volumeDisplay';
-                    const stroke = metric === 'e1rm' ? '#8b5cf6' : '#38bdf8';
+                    const stroke = metric === 'e1rm' ? '#b8a0ff' : '#38bdf8';
                     const gradientId = metric === 'e1rm' ? 'purpleFill' : 'skyFill';
                     return (
                         <>
@@ -375,12 +333,12 @@ export default function Progress() {
                                         <CartesianGrid stroke="rgba(143,176,207,0.07)" vertical={false} strokeDasharray="3 3" />
                                         <XAxis
                                             dataKey="label"
-                                            tick={{ fill: '#55534f', fontSize: 11 }}
+                                            tick={{ fill: '#a4a3af', fontSize: 11 }}
                                             axisLine={false}
                                             tickLine={false}
                                         />
                                         <YAxis
-                                            tick={{ fill: '#55534f', fontSize: 11 }}
+                                            tick={{ fill: '#a4a3af', fontSize: 11 }}
                                             axisLine={false}
                                             tickLine={false}
                                             domain={['auto', 'auto']}
@@ -432,7 +390,7 @@ export default function Progress() {
                     );
                 })()}
             </Card>
-            </Glass>
+
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <Card className="space-y-4 mesh-border">

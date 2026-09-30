@@ -1,195 +1,139 @@
-import { useEffect, useRef } from 'react';
-import { compileShader, linkProgram, createQuadBuffer, resizeCanvas, cleanupWebGL } from '../../lib/webgl-utils';
+import { useEffect, useRef, useState } from 'react';
+import { compileShader, linkProgram, createQuadBuffer, cleanupWebGL } from '../../lib/webgl-utils';
 
-/**
- * ShaderBackground — full-screen fixed WebGL canvas with an animated
- * domain-warped FBM mesh gradient. Paints slowly morphing deep-purple /
- * steel-blue hues at very low opacity over a near-black base, creating
- * organic depth without competing with foreground content.
- *
- * Falls back gracefully (renders nothing) when WebGL is unavailable.
- */
-
-const VERT_SRC = /* glsl */`
-attribute vec2 a_position;
-void main() {
-  gl_Position = vec4(a_position, 0.0, 1.0);
-}
-`;
-
-const FRAG_SRC = /* glsl */`
+const VERTEX = `attribute vec2 a_position; void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`;
+const FRAGMENT = /* glsl */`
 precision mediump float;
-
+uniform vec2 u_resolution;
 uniform float u_time;
-uniform vec2  u_resolution;
-
-/* ---- compact smooth noise ---- */
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
-
-float noise(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = hash(i);
-  float b = hash(i + vec2(1.0, 0.0));
-  float c = hash(i + vec2(0.0, 1.0));
-  float d = hash(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-float fbm(vec2 p) {
-  float v = 0.0;
-  float a = 0.5;
-  vec2  shift = vec2(100.0);
-  mat2  rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
-  for (int i = 0; i < 5; i++) {
-    v += a * noise(p);
-    p  = rot * p * 2.1 + shift;
-    a *= 0.5;
-  }
-  return v;
-}
-
+uniform float u_hero;
 void main() {
-  vec2 uv = gl_FragCoord.xy / u_resolution;
-  /* aspect-correct UV */
-  vec2 st = uv;
-  st.x *= u_resolution.x / u_resolution.y;
-
-  float t = u_time * 0.07;
-
-  /* Domain warp: two layers of fbm drive the lookup of a third */
-  vec2 q = vec2(fbm(st + vec2(t * 0.6, t * 0.4)),
-                fbm(st + vec2(3.14, 1.57) + vec2(-t * 0.3, t * 0.5)));
-
-  vec2 r = vec2(fbm(st + 3.0 * q + vec2(1.7, 9.2) + vec2(t * 0.15, 0.0)),
-                fbm(st + 3.0 * q + vec2(8.3, 2.8) + vec2(0.0, t * 0.2)));
-
-  float f = fbm(st + 3.5 * r);
-
-  /* Colour blend: deep purple <-> steel blue */
-  vec3 purple = vec3(0.545, 0.361, 0.965);
-  vec3 steel  = vec3(0.56, 0.69, 0.81);
-  vec3 mid    = vec3(0.45, 0.25, 0.85);
-
-  vec3 col = mix(purple, mid,   clamp(f * 2.0,       0.0, 1.0));
-      col  = mix(col,    steel, clamp(f * 2.0 - 1.0, 0.0, 1.0));
-
-  /* Scale brightness to a very low opacity layer (4-9 %) */
-  float brightness = f * 0.10 + 0.02;
-  col *= brightness;
-
-  /* Slow pulsing centre glow */
-  vec2  centre     = vec2(0.5);
-  float dist       = length(uv - centre);
-  float glow       = 0.04 * (0.55 + 0.45 * sin(t * 1.3)) * smoothstep(0.75, 0.0, dist);
-  col += glow * mix(purple, steel, sin(t * 0.7) * 0.5 + 0.5);
-
-  /* Vignette — darken edges */
-  float vign = smoothstep(1.35, 0.35, dist * 1.6);
-  col *= vign;
-
-  /* Subtle scan-line-style horizontal banding (very faint) */
-  float band = 1.0 - 0.012 * abs(sin(uv.y * u_resolution.y * 0.5));
-  col *= band;
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`;
-
-export default function ShaderBackground() {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    let gl, vert, frag, program, buf, ro, rafId;
-
-    /* If WebGL init or shader compilation fails, hide the canvas. It's an
-       alpha:false (opaque) layer at z-index -1, and on headless / GPU-blocklisted
-       stacks an uncleared buffer can paint solid white over the carbon body.
-       Hiding it lets the dark body show through instead of a white screen. */
-    const bail = () => {
-      canvas.style.display = 'none';
-    };
-
-    try {
-      gl = canvas.getContext('webgl', { antialias: false, alpha: false, depth: false });
-      if (!gl) {
-        console.warn('[ShaderBG] WebGL not supported — background disabled.');
-        return bail();
-      }
-
-      vert = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC, 'ShaderBG');
-      frag = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC, 'ShaderBG');
-      if (!vert || !frag) return bail();
-
-      program = linkProgram(gl, vert, frag, 'ShaderBG');
-      if (!program) return bail();
-
-      buf = createQuadBuffer(gl);
-      if (!buf) return bail();
-
-      const posLoc = gl.getAttribLocation(program, 'a_position');
-      const timeLoc = gl.getUniformLocation(program, 'u_time');
-      const resLoc  = gl.getUniformLocation(program, 'u_resolution');
-
-      const resize = () => resizeCanvas(gl, canvas);
-      resize();
-
-      ro = new ResizeObserver(resize);
-      ro.observe(canvas);
-
-      const start = performance.now();
-
-      const render = () => {
-        rafId = requestAnimationFrame(render);
-
-        gl.useProgram(program);
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-        gl.uniform1f(timeLoc, (performance.now() - start) / 1000);
-        gl.uniform2f(resLoc,  canvas.width, canvas.height);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-      };
-      render();
-    } catch (e) {
-      console.warn('[ShaderBG] WebGL init failed:', e);
-      bail();
-      return;
+    vec2 uv = gl_FragCoord.xy / u_resolution;
+    float aspect = u_resolution.x / u_resolution.y;
+    float t = u_time;
+    vec3 violet = vec3(0.61, 0.39, 1.0);
+    vec3 cyan = vec3(0.22, 0.82, 1.0);
+    vec3 color = mix(vec3(0.025, 0.025, 0.047), vec3(0.055, 0.036, 0.10), uv.x);
+    vec2 p = (uv - vec2(0.76, 0.52)) * vec2(aspect, 1.0);
+    float radius = length(p);
+    float halo = exp(-radius * radius * 5.0);
+    color += mix(violet, cyan, uv.y) * halo * mix(0.05, 0.10, u_hero);
+    for (int i = 0; i < 4; i++) {
+        float n = float(i);
+        float line = 0.43 + 0.13 * sin(uv.x * 5.4 + t * 0.24 + n * 0.48)
+                          + 0.055 * cos(uv.x * 12.0 - t * 0.18 + n * 0.7);
+        float distance = abs(uv.y - line - n * 0.035);
+        float thread = exp(-distance * 220.0);
+        float glow = exp(-distance * 26.0);
+        float mask = smoothstep(0.04, 0.75, uv.x);
+        color += mix(violet, cyan, n / 3.0) * (thread * 0.45 + glow * 0.045) * mask;
     }
+    float angle = atan(p.y, p.x);
+    float arc = pow(0.5 + 0.5 * cos(angle - t * 0.20), 6.0);
+    float ring = exp(-abs(radius - 0.29) * 110.0);
+    color += mix(violet, cyan, arc) * ring * (0.10 + arc * 0.35) * u_hero;
+    vec2 grid = abs(fract(uv * vec2(24.0 * aspect, 24.0)) - 0.5);
+    float mesh = max(smoothstep(0.48, 0.50, grid.x), smoothstep(0.48, 0.50, grid.y));
+    color += cyan * mesh * 0.015 * smoothstep(0.2, 0.9, uv.x);
+    float vignette = 1.0 - 0.45 * length(uv - 0.5);
+    gl_FragColor = vec4(color * vignette, 1.0);
+}`;
 
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      if (ro) ro.disconnect();
-      if (gl) cleanupWebGL(gl, { buf, vs: vert, fs: frag, prog: program });
-    };
-  }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        width:  '100vw',
-        height: '100vh',
-        zIndex: -1,
-        pointerEvents: 'none',
-        display: 'block',
-        /* Dark base so the carbon theme holds even when WebGL is unavailable
-           (older Android WebViews, GPU blocklists, iOS low-power mode). Without
-           it the canvas is non-dark and backdrop-filter blurs glass surfaces
-           into unreadable white. */
-        background: '#0b0b0c',
-      }}
-    />
-  );
+/** Decorative energy field: bounded resolution, 24 fps hero / 12 fps ambient.
+ * Static CSS remains when motion is reduced, WebGL fails or context is lost.
+ */
+export default function ShaderBackground({ variant = 'ambient', className = '' }) {
+    const canvasRef = useRef(null);
+    const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    useEffect(() => {
+        const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const change = () => setReduced(preference.matches);
+        preference.addEventListener('change', change);
+        return () => preference.removeEventListener('change', change);
+    }, []);
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+        let gl, vs, fs, prog, buf, resizeObserver, intersectionObserver, raf, timeLocation;
+        let visible = true, disposed = false, last = -Infinity;
+        const boot = performance.now();
+        const cleanup = () => {
+            if (disposed) return;
+            disposed = true;
+            canvas.style.display = 'none';
+            cancelAnimationFrame(raf);
+            resizeObserver?.disconnect();
+            intersectionObserver?.disconnect();
+            document.removeEventListener('visibilitychange', sync);
+            motion.removeEventListener('change', sync);
+            canvas.removeEventListener('webglcontextlost', lost);
+            if (gl) cleanupWebGL(gl, { vs, fs, prog, buf });
+        };
+        const draw = (timestamp) => {
+            if (disposed || !visible || document.hidden || motion.matches || !prog) return;
+            if (timestamp - last >= 1000 / (variant === 'hero' ? 24 : 12)) {
+                last = timestamp;
+                gl.useProgram(prog);
+                gl.uniform1f(timeLocation, (timestamp - boot) / 1000);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+            raf = requestAnimationFrame(draw);
+        };
+        function sync() {
+            cancelAnimationFrame(raf);
+            canvas.style.opacity = motion.matches ? '0' : '';
+            if (!disposed && visible && !document.hidden && !motion.matches && prog) raf = requestAnimationFrame(draw);
+        }
+        function lost(event) {
+            event.preventDefault();
+            canvas.style.display = 'none';
+            cleanup();
+        }
+        try {
+            // Avoid creating a GPU context at all for an initial reduced-motion preference.
+            if (motion.matches) return;
+            gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'low-power', preserveDrawingBuffer: false });
+            if (!gl) return;
+            vs = compileShader(gl, gl.VERTEX_SHADER, VERTEX, 'Energy field');
+            fs = compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT, 'Energy field');
+            if (!vs || !fs) { cleanup(); return; }
+            prog = linkProgram(gl, vs, fs, 'Energy field');
+            if (!prog) { cleanup(); return; }
+            buf = createQuadBuffer(gl);
+            if (!buf) { cleanup(); return; }
+            gl.useProgram(prog);
+            timeLocation = gl.getUniformLocation(prog, 'u_time');
+            const position = gl.getAttribLocation(prog, 'a_position');
+            gl.enableVertexAttribArray(position);
+            gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+            gl.uniform1f(gl.getUniformLocation(prog, 'u_hero'), variant === 'hero' ? 1 : 0);
+            const resize = () => {
+                const width = canvas.parentElement.clientWidth, height = canvas.parentElement.clientHeight;
+                const scale = Math.min(1, (variant === 'hero' ? 900 : 1100) / Math.max(width, height, 1));
+                canvas.width = Math.max(1, Math.round(width * scale));
+                canvas.height = Math.max(1, Math.round(height * scale));
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.uniform2f(gl.getUniformLocation(prog, 'u_resolution'), canvas.width, canvas.height);
+                last = -Infinity;
+            };
+            resize();
+            resizeObserver = new ResizeObserver(resize);
+            resizeObserver.observe(canvas);
+            if (typeof IntersectionObserver !== 'undefined') {
+                intersectionObserver = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; sync(); });
+                intersectionObserver.observe(canvas);
+            }
+            document.addEventListener('visibilitychange', sync);
+            motion.addEventListener('change', sync);
+            canvas.addEventListener('webglcontextlost', lost);
+            canvas.style.display = 'block';
+            sync();
+        } catch {
+            canvas.style.display = 'none';
+            cleanup();
+        }
+        return cleanup;
+    }, [variant, reduced]);
+    return <div aria-hidden="true" className={`shader-field shader-field--${variant} ${className}`}><canvas ref={canvasRef} /></div>;
 }

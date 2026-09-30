@@ -42,6 +42,7 @@ import Login from './pages/Login';
 import AuthCallback from './components/auth/AuthCallback';
 import MobileNav from './components/layout/MobileNav';
 import LinearGradient from './components/ui/LinearGradient';
+import ShaderBackground from './components/ui/ShaderBackground';
 
 export const NAV_ITEMS = [
     { name: 'Home', icon: LayoutDashboard, path: '/' },
@@ -279,7 +280,10 @@ export default function App() {
                                 <ToastProvider>
                                     <Router>
                                         <NativeShell />
-                                        <AppRoutes />
+                                        <div className="visual-root">
+                                            <ShaderBackground />
+                                            <AppRoutes />
+                                        </div>
                                     </Router>
                                 </ToastProvider>
                             </ModalProvider>
