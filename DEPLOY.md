@@ -5,6 +5,8 @@ backed by D1. Everything below fits inside Cloudflare's free tier.
 
 > **Current deployment:** https://liftit-4mq.pages.dev — Pages project
 > `liftit`, D1 database `liftit` (id in `wrangler.toml`), `JWT_SECRET` set.
+> This is a Direct Upload project. GitHub Actions deploys passing `main` commits
+> with Wrangler; Cloudflare does not have a native Git connection.
 > OAuth providers are not configured yet, so the login page hides the sign-in
 > buttons; complete step 5 below and redeploy to enable accounts.
 
@@ -41,15 +43,20 @@ Copy the `database_id` it prints into `wrangler.toml`, replacing
 npm run cf:db:migrate
 ```
 
-### 2. Create the Pages project
+### 2. Use the existing Pages project
 
-Push the branch, then in the Cloudflare dashboard: **Workers & Pages → Create →
-Pages → Connect to Git**, pick the repo, and set:
+The production project is named `liftit` and serves `liftit-4mq.pages.dev`.
+It was created with Direct Upload, so Cloudflare cannot add native Git
+integration to it. The workflow in `.github/workflows/ci.yml` runs checks on
+pull requests and deploys passing `main` commits with Wrangler. This keeps the
+existing domain, Pages Functions, and D1 binding.
 
-- **Build command:** `npm run build`
-- **Build output directory:** `dist`
-
-Cloudflare then redeploys on every push to the production branch.
+For the workflow, create a Cloudflare API token with **Account → Cloudflare
+Pages → Edit** permission and save it as the GitHub Actions repository secret
+`CLOUDFLARE_API_TOKEN`. Save the account ID as the repository secret
+`CLOUDFLARE_ACCOUNT_ID`. Keep the token out of commits and logs. The deploy
+job only runs after the `check` job passes on `main`; pull requests cannot use
+these secrets.
 
 ### 3. Set environment variables
 
@@ -57,7 +64,7 @@ Cloudflare then redeploys on every push to the production branch.
 
 | Variable | Value |
 |---|---|
-| `VITE_API_URL` | `/api` — **required**, or the app runs with no backend |
+| `VITE_API_URL` | `/api` at frontend build time — set in the GitHub Actions deploy job |
 | `JWT_SECRET` | 64 random chars — mark as **Secret** |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional, enables Google sign-in |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | optional, enables GitHub sign-in |
@@ -69,8 +76,8 @@ Generate a secret with:
 node -e "console.log(crypto.randomUUID().replace(/-/g,'')+crypto.randomUUID().replace(/-/g,''))"
 ```
 
-`VITE_API_URL` is read at **build** time, not runtime — set it before the build
-that goes live, and redeploy after changing it.
+`VITE_API_URL` is read at **build** time, not runtime. The deployment workflow
+sets it to `/api`; a manual local deployment needs the same build setting.
 
 ### 4. Bind D1 to the Pages project
 
@@ -123,9 +130,17 @@ signing in on a preview deployment) needs its own URI registered too. Pin
 
 ### 6. Deploy and verify
 
+Push or merge to `main` and wait for the GitHub Actions `check` and `deploy`
+jobs to pass. For an authorized manual release, build with `VITE_API_URL=/api`
+and run Wrangler from this repository so it includes `functions/`:
+
 ```bash
-npm run cf:deploy      # or just push, if Git integration is connected
+VITE_API_URL=/api npm run build
+npx wrangler pages deploy dist --project-name=liftit --branch=main
 ```
+
+Do not use dashboard drag-and-drop for this app: Cloudflare does not support
+Pages Functions in dashboard Direct Uploads.
 
 Then check:
 
