@@ -65,7 +65,7 @@ jobs:
         run: |
           test -f dist/index.html
           test -f dist/sw.js
-          test -f functions/api/[[route]].js
+          test -f 'functions/api/[[route]].js'
 
       - name: Deploy to existing Liftit Pages project
         uses: cloudflare/wrangler-action@v4
