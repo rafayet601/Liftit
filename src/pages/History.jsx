@@ -8,15 +8,17 @@ import {
     Trophy,
     ChevronRight,
     TrendingUp,
+    Search,
+    X,
+    RotateCcw,
 } from 'lucide-react';
 import { db } from '../data/db';
 import { useWorkouts } from '../data/DataProvider';
 import { useUnit } from '../contexts/UnitContext';
 import { workoutVolume, prTimeline, e1rmTrend } from '../engine/analytics';
-import { Card, Chip, EmptyState, PageHeader, Sheet } from '../components/ui/Primitives';
+import { Card, Chip, EmptyState, PageHeader, Sheet, Segmented } from '../components/ui/Primitives';
 import Glass from '../components/ui/Glass';
 import ShareCard from '../components/ui/ShareCard';
-import { useToast } from '../components/ui/Toast';
 
 /**
  * History — every logged session, newest first; tap into a session for the
@@ -26,14 +28,42 @@ export default function History() {
     const { id } = useParams();
     const workouts = useWorkouts();
     const navigate = useNavigate();
+    const [query, setQuery] = useState('');
+    const [period, setPeriod] = useState('all');
+    const [recordsOnly, setRecordsOnly] = useState(false);
+    const [deleted, setDeleted] = useState(null);
+    const { unit, displayWeight } = useUnit();
     const [exerciseDetail, setExerciseDetail] = useState(null);
 
-    const prEvents = useMemo(() => prTimeline(workouts, 100), [workouts]);
+    const prEvents = useMemo(() => prTimeline(workouts, Infinity), [workouts]);
     const prWorkoutIds = useMemo(() => new Set(prEvents.map((e) => e.workoutId)), [prEvents]);
+
+    const filtered = useMemo(() => {
+        const needle = query.trim().toLocaleLowerCase();
+        const cutoff = new Date();
+        cutoff.setHours(0, 0, 0, 0);
+        cutoff.setDate(cutoff.getDate() - Number(period) + 1);
+        return workouts.filter(workout => {
+            if (period !== 'all' && new Date(workout.startedAt) < cutoff) return false;
+            if (recordsOnly && !prWorkoutIds.has(workout.id)) return false;
+            const searchText = [workout.name, workout.notes, ...workout.sets.map(set => db.exercises.byId(set.exerciseId)?.name)].join(' ').toLocaleLowerCase();
+            return !needle || searchText.includes(needle);
+        });
+    }, [workouts, query, period, recordsOnly, prWorkoutIds]);
+    const months = useMemo(() => {
+        const groups = new Map();
+        for (const workout of filtered) {
+            const month = new Date(workout.startedAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+            if (!groups.has(month)) groups.set(month, []);
+            groups.get(month).push(workout);
+        }
+        return [...groups];
+    }, [filtered]);
+    const resetFilters = () => { setQuery(''); setPeriod('all'); setRecordsOnly(false); };
 
     const selected = id ? workouts.find((w) => w.id === id) : null;
 
-    if (!workouts.length) {
+    if (!workouts.length && !deleted && !id) {
         return (
             <EmptyState
                 icon={HistoryIcon}
@@ -59,21 +89,46 @@ export default function History() {
                 />
             </Glass>
 
-            <ul className="space-y-3">
-                {workouts.map((w) => (
-                    <SessionRow
-                        key={w.id}
-                        workout={w}
-                        hasPR={prWorkoutIds.has(w.id)}
-                        onOpen={() => navigate(`/history/${w.id}`)}
-                    />
-                ))}
-            </ul>
+            {deleted && (
+                <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/5 p-4">
+                    <p className="text-sm text-ink-300">Deleted “{deleted.name}”.</p>
+                    <button type="button" className="btn-secondary" onClick={() => { db.workouts.save(deleted); setDeleted(null); }}><RotateCcw className="h-4 w-4" /> Undo delete</button>
+                </div>
+            )}
+
+            <Card className="space-y-4">
+                <div className="relative">
+                    <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                    <input type="search" aria-label="Search workout history" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search workouts, exercises or notes" className="input pl-11 pr-12" />
+                    {query && <button type="button" aria-label="Clear search" className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-ink-400" onClick={() => setQuery('')}><X className="h-4 w-4" /></button>}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Segmented label="History date range" value={period} onChange={setPeriod} options={[{ value: 'all', label: 'All time' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' }]} />
+                    <button type="button" aria-pressed={recordsOnly} onClick={() => setRecordsOnly(value => !value)} className={recordsOnly ? 'btn-outline' : 'btn-secondary'}><Trophy className="h-4 w-4" /> Personal records</button>
+                </div>
+            </Card>
+
+            <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
+                <p role="status" className="text-sm font-semibold text-ink-300">{filtered.length} of {workouts.length} workouts</p>
+                <p className="text-xs text-ink-400">{filtered.reduce((total, workout) => total + workout.sets.length, 0)} logged sets · {Math.round(displayWeight(filtered.reduce((total, workout) => total + workoutVolume(workout), 0))).toLocaleString()} {unit} volume</p>
+            </div>
+
+            {months.map(([month, sessions]) => (
+                <section key={month} aria-label={month} className="space-y-3">
+                    <h2 className="eyebrow px-1">{month}</h2>
+                    <ul className="space-y-3">
+                        {sessions.map(workout => <SessionRow key={workout.id} workout={workout} hasPR={prWorkoutIds.has(workout.id)} />)}
+                    </ul>
+                </section>
+            ))}
+            {!filtered.length && <EmptyState icon={Search} title="No matching workouts" description="Try another exercise, a wider date range, or clear your filters." action={<button type="button" className="btn-secondary" onClick={resetFilters}>Reset filters</button>} />}
+            {id && !selected && <Sheet open title="Workout unavailable" onClose={() => navigate('/history')}><p className="text-sm text-ink-300">This workout may have been deleted or isn’t saved on this device.</p><button type="button" className="btn-primary mt-5" onClick={() => navigate('/history')}>Back to history</button></Sheet>}
 
             {selected && (
                 <SessionDetail
                     workout={selected}
                     onClose={() => navigate('/history')}
+                    onDelete={workout => { setDeleted(workout); navigate('/history'); }}
                     onExercise={(exerciseId) => setExerciseDetail(exerciseId)}
                 />
             )}
@@ -88,7 +143,7 @@ export default function History() {
     );
 }
 
-const SessionRow = React.memo(function SessionRow({ workout, hasPR, onOpen }) {
+const SessionRow = React.memo(function SessionRow({ workout, hasPR }) {
     const { unit, displayWeight } = useUnit();
     const volume = workoutVolume(workout);
     const date = new Date(workout.startedAt);
@@ -96,9 +151,8 @@ const SessionRow = React.memo(function SessionRow({ workout, hasPR, onOpen }) {
 
     return (
         <li>
-            <button
-                type="button"
-                onClick={onOpen}
+            <Link
+                to={`/history/${workout.id}`}
                 className="glass-card glass-card-hover flex w-full items-center justify-between gap-4 p-4 text-left"
             >
                 <div className="flex min-w-0 items-center gap-4">
@@ -112,27 +166,26 @@ const SessionRow = React.memo(function SessionRow({ workout, hasPR, onOpen }) {
                     </div>
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                            <h3 className="truncate font-display text-base font-bold text-white">
+                            <h3 className="font-display text-base font-bold text-white">
                                 {workout.name}
                             </h3>
-                            {hasPR && <Trophy className="h-4 w-4 shrink-0 text-amber-300" />}
+                            {hasPR && <Trophy aria-label="Personal record" className="h-4 w-4 shrink-0 text-amber-300" />}
                         </div>
                         <p className="mt-0.5 text-xs text-ink-500">
-                            {exerciseCount} exercises · {workout.sets.length} sets ·{' '}
+                            {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'} · {workout.sets.length} set{workout.sets.length === 1 ? '' : 's'} ·{' '}
                             {Math.round(displayWeight(volume)).toLocaleString()} {unit}
                             {workout.durationSec ? ` · ${Math.round(workout.durationSec / 60)}m` : ''}
                         </p>
                     </div>
                 </div>
                 <ChevronRight className="h-5 w-5 shrink-0 text-ink-500" />
-            </button>
+            </Link>
         </li>
     );
 })
 
-function SessionDetail({ workout, onClose, onExercise }) {
+function SessionDetail({ workout, onClose, onExercise, onDelete }) {
     const { unit, displayWeight } = useUnit();
-    const { showToast } = useToast();
     const [confirmDelete, setConfirmDelete] = useState(false);
 
     const groups = useMemo(() => {
@@ -182,7 +235,7 @@ function SessionDetail({ workout, onClose, onExercise }) {
                             <button
                                 type="button"
                                 onClick={() => onExercise(exerciseId)}
-                                className="mb-2 flex w-full items-center justify-between text-left"
+                                className="mb-2 flex min-h-11 w-full items-center justify-between text-left"
                             >
                                 <span className="font-display text-sm font-bold text-white">
                                     {exercise?.name ?? 'Exercise'}
@@ -192,6 +245,8 @@ function SessionDetail({ workout, onClose, onExercise }) {
                                 </span>
                             </button>
                             <table className="w-full text-sm">
+                                <caption className="sr-only">Logged sets for {exercise?.name ?? 'exercise'}</caption>
+                                <thead className="text-left text-[10px] uppercase tracking-wider text-ink-400"><tr><th scope="col" className="py-2">Set</th><th scope="col">Weight × reps</th><th scope="col" className="text-right">Effort</th></tr></thead>
                                 <tbody>
                                     {sets.map((s, i) => (
                                         <tr key={i} className="border-t border-white/[0.05]">
@@ -222,8 +277,7 @@ function SessionDetail({ workout, onClose, onExercise }) {
                             className="btn-danger flex-1"
                             onClick={() => {
                                 db.workouts.remove(workout.id);
-                                showToast('Workout deleted.', 'success');
-                                onClose();
+                                onDelete(workout);
                             }}
                         >
                             Confirm delete

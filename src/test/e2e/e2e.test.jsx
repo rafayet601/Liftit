@@ -17,6 +17,13 @@ import { ToastProvider } from '../../components/ui/Toast';
 import { AppRoutes } from '../../App';
 import { discardSession } from '../../hooks/useActiveSession';
 
+// Follow the confirmation when a scenario finishes before all planned sets.
+function finishWorkout() {
+    fireEvent.click(screen.getByRole('button', { name: /Finish Workout/i }));
+    const confirm = screen.queryByRole('button', { name: /^Save \d+ completed sets?$/ });
+    if (confirm) fireEvent.click(confirm);
+}
+
 // Mock recharts to avoid JSDOM layout issues
 vi.mock('recharts', async (importOriginal) => {
     const original = await importOriginal();
@@ -639,7 +646,7 @@ expect(greeting).toBeTruthy();
             );
 
             fireEvent.click(screen.getByText('Morning Pull'));
-            expect(screen.getByText(/Barbell Row/i)).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Barbell Row.*Trend/i })).toBeInTheDocument();
             expect(screen.getByText(/70 kg × 10/)).toBeInTheDocument();
         });
 
@@ -1283,7 +1290,7 @@ expect(greeting).toBeTruthy();
             fireEvent.click(screen.getByLabelText('Complete set 1'));
 
             // Finish
-            fireEvent.click(screen.getByRole('button', { name: /Finish Workout/i }));
+            finishWorkout();
             expect(screen.getByText('0m')).toBeInTheDocument(); // 0 minute default for instant finish
         });
     });
@@ -1465,19 +1472,21 @@ expect(greeting).toBeTruthy();
             expect(screen.getByText(/No workouts yet/i)).toBeInTheDocument();
         });
 
-        it('T2.6.5: Attempting to view a non-existent history ID redirects to history index /history', () => {
+        it('T2.6.5: A missing workout explains its absence and offers a return to history', () => {
             db.settings.update({ onboarded: true });
             render(
                 <Providers initialEntries={['/history/non-existent']}>
                     <AppRoutes />
                 </Providers>,
             );
+            expect(screen.getByRole('dialog', { name: 'Workout unavailable' })).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: 'Back to history' }));
             expect(screen.getByText(/No workouts yet/i)).toBeInTheDocument();
         });
     });
 
     describe('Tier 2 - Feature 7: Progress analytics charts', () => {
-        it('T2.7.1: Only one data point in volume history shows dot instead of line chart', () => {
+        it('T2.7.1: A single session explains that another is needed for a trend', () => {
             db.settings.update({ onboarded: true });
             db.workouts.save({
                 id: 'w1',
@@ -1492,8 +1501,8 @@ expect(greeting).toBeTruthy();
                     <AppRoutes />
                 </Providers>,
             );
-            // Single workout will show helper message to log in at least two sessions
-            expect(screen.getByText(/Log this lift in at least two sessions/i)).toBeInTheDocument();
+            // A single workout explains the current date range and next step
+            expect(screen.getByText(/One session in this range/i)).toBeInTheDocument();
         });
 
         it('T2.7.2: Swapping weight units (lbs/kg) dynamically updates Recharts data series and tooltips', () => {
@@ -1713,7 +1722,7 @@ expect(greeting).toBeTruthy();
             fireEvent.click(screen.getByLabelText('Complete set 1'));
 
             // Finish
-            fireEvent.click(screen.getByRole('button', { name: /Finish Workout/i }));
+            finishWorkout();
             fireEvent.click(screen.getByRole('button', { name: /View in history/i }));
 
             // Should show in history
@@ -1978,7 +1987,7 @@ expect(greeting).toBeTruthy();
             fireEvent.click(screen.getAllByLabelText('Complete set 1')[0]);
 
             // Finish session
-            fireEvent.click(screen.getByRole('button', { name: /Finish Workout/i }));
+            finishWorkout();
             
             // Verify finish sheet is shown
             expect(screen.getByText(/Workout complete/i)).toBeInTheDocument();
@@ -2039,7 +2048,7 @@ expect(greeting).toBeTruthy();
             fireEvent.click(screen.getByLabelText('Complete set 2'));
 
             // Finish
-            fireEvent.click(screen.getByRole('button', { name: /Finish Workout/i }));
+            finishWorkout();
             fireEvent.click(screen.getByRole('button', { name: /View in history/i }));
 
             expect(db.workouts.list().length).toBe(1);

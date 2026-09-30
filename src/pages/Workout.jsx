@@ -238,9 +238,12 @@ function ActiveSession() {
 
     const [expanded, setExpanded] = useState(() => ({ [session.exercises[0]?.key]: true }));
     const [picker, setPicker] = useState(null); // null | 'add' | { swapKey }
-    const [rest, setRest] = useState(null); // { key, seconds }
+    const rest = session.rest ?? null;
+    const setRest = (value) => updateSession((draft) => { draft.rest = value; });
     const [confirmDiscard, setConfirmDiscard] = useState(false);
     const [summary, setSummary] = useState(null);
+    const [confirmFinish, setConfirmFinish] = useState(false);
+    const [pendingChange, setPendingChange] = useState(null);
 
     /* ---------- watch bridge ---------- */
     // Mirror the session onto the Apple Watch (latest-value-wins). Cleared
@@ -266,12 +269,35 @@ function ActiveSession() {
             if (ex) ex.sets[setIdx] = { ...ex.sets[setIdx], ...patch };
         });
 
-    const completeSet = (exercise, setIdx) => {
+    const completeSet = (exercise, setIdx, values) => {
         updateSession((d) => {
             const ex = d.exercises.find((e) => e.key === exercise.key);
-            if (ex) ex.sets[setIdx].completed = true;
+            if (ex) ex.sets[setIdx] = { ...ex.sets[setIdx], ...values, completed: true };
+            const seconds = exercise.restSec || 120;
+            d.rest = { key: `${exercise.key}-${setIdx}`, seconds, endAt: Date.now() + seconds * 1000, exerciseName: db.exercises.byId(exercise.exerciseId)?.name ?? 'Exercise' };
         });
-        setRest({ key: `${exercise.key}-${setIdx}`, seconds: exercise.restSec || 120 });
+    };
+
+    const undoSet = (exercise, setIdx) => updateSession((draft) => {
+        const entry = draft.exercises.find((item) => item.key === exercise.key);
+        if (entry) entry.sets[setIdx].completed = false;
+        if (draft.rest?.key === `${exercise.key}-${setIdx}`) draft.rest = null;
+    });
+
+    const requestChange = (entry, type) => {
+        if (entry.sets.some((set) => set.completed || set.reps > 0)) {
+            setPendingChange({ entry, type });
+        } else if (type === 'swap') setPicker({ swapKey: entry.key });
+        else removeExercise(entry.key);
+    };
+    const applyChange = () => {
+        if (pendingChange.type === 'swap') setPicker({ swapKey: pendingChange.entry.key });
+        else removeExercise(pendingChange.entry.key);
+        setPendingChange(null);
+    };
+    const advance = (key) => {
+        setExpanded((current) => ({ ...current, [key]: true }));
+        requestAnimationFrame(() => document.getElementById(`exercise-${key}`)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }));
     };
 
     const addSet = (exKey) =>
@@ -285,6 +311,7 @@ function ActiveSession() {
     const removeExercise = (exKey) =>
         updateSession((d) => {
             d.exercises = d.exercises.filter((e) => e.key !== exKey);
+            if (d.rest?.key.startsWith(`${exKey}-`)) d.rest = null;
         });
 
     const addExercise = (exercise) => {
@@ -301,6 +328,7 @@ function ActiveSession() {
             updateSession((d) => {
                 const idx = d.exercises.findIndex((e) => e.key === picker.swapKey);
                 if (idx >= 0) d.exercises[idx] = entry;
+                if (d.rest?.key.startsWith(`${picker.swapKey}-`)) d.rest = null;
             });
         } else {
             updateSession((d) => {
@@ -313,6 +341,8 @@ function ActiveSession() {
 
     /* ---------- finish ---------- */
     const finish = () => {
+        if (summary) return;
+        setConfirmFinish(false);
         hapticMedium();
         const durationSec = Math.max(
             0,
@@ -371,12 +401,13 @@ function ActiveSession() {
         hapticSuccess();
         // Keep the session mounted until the summary is dismissed —
         // discarding here would unmount this component and the sheet with it.
+        setRest(null);
         setSummary({ workout, prs, volume: workoutVolume(workout), durationSec });
     };
 
     /* ---------- render ---------- */
     return (
-        <div className="space-y-5 animate-fade-in">
+        <div className={clsx('space-y-5 animate-fade-in', rest && 'pb-36')}>
             {/* Header */}
             <div className="sticky top-0 z-30 -mx-4 px-4 py-3 bg-ink-950/95 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_4px_30px_rgba(0,0,0,0.4)] flex flex-wrap items-center justify-between gap-3 md:mx-0 md:rounded-2xl md:border md:bg-ink-900/60">
                 <div className="min-w-0">
@@ -394,7 +425,7 @@ function ActiveSession() {
                     </button>
                     <button
                         type="button"
-                        onClick={finish}
+                        onClick={() => completedSets < totalSets ? setConfirmFinish(true) : finish()}
                         disabled={completedSets === 0}
                         className="btn-cta"
                         style={{ minWidth: '120px' }}
@@ -428,6 +459,7 @@ function ActiveSession() {
                             d.notes = e.target.value;
                         })
                     }
+                    aria-label="Workout notes"
                     rows={3}
                     maxLength={2000}
                     placeholder="How did it feel? Bar speed, aches, cues that clicked…"
@@ -447,9 +479,12 @@ function ActiveSession() {
                         onToggle={() => setExpanded((p) => ({ ...p, [ex.key]: !p[ex.key] }))}
                         onChangeSet={changeSet}
                         onCompleteSet={completeSet}
+                        onUndoSet={undoSet}
+                        nextEntry={session.exercises.slice(idx + 1).find(item => item.sets.some(set => !set.completed))}
+                        onAdvance={advance}
                         onAddSet={addSet}
-                        onSwap={() => setPicker({ swapKey: ex.key })}
-                        onRemove={() => removeExercise(ex.key)}
+                        onSwap={() => requestChange(ex, 'swap')}
+                        onRemove={() => requestChange(ex, 'remove')}
                         unit={unit}
                         displayWeight={displayWeight}
                     />
@@ -472,7 +507,25 @@ function ActiveSession() {
                     onClose={() => setPicker(null)}
                 />
             )}
-            {rest && <RestTimer key={rest.key} seconds={rest.seconds} onDone={() => setRest(null)} />}
+            {rest && <RestTimer key={rest.key} seconds={rest.seconds} endAt={rest.endAt} exerciseName={rest.exerciseName} onExtend={(endAt, seconds) => setRest({ ...rest, endAt, seconds })} onDone={() => setRest(null)} />}
+            {confirmFinish && (
+                <Sheet open title="Finish this workout?" onClose={() => setConfirmFinish(false)}>
+                    <p className="text-sm leading-relaxed text-ink-300">{completedSets} of {totalSets} sets completed. Only completed sets will be saved; the {totalSets - completedSets} unfinished sets won’t appear in History.</p>
+                    <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                        <button type="button" className="btn-primary flex-1" onClick={finish}>Save {completedSets} completed {completedSets === 1 ? 'set' : 'sets'}</button>
+                        <button type="button" className="btn-secondary flex-1" onClick={() => setConfirmFinish(false)}>Keep training</button>
+                    </div>
+                </Sheet>
+            )}
+            {pendingChange && (
+                <Sheet open title={`${pendingChange.type === 'swap' ? 'Swap' : 'Remove'} ${db.exercises.byId(pendingChange.entry.exerciseId)?.name ?? 'exercise'}?`} onClose={() => setPendingChange(null)}>
+                    <p className="text-sm leading-relaxed text-ink-300">This exercise has entered sets. {pendingChange.type === 'swap' ? 'Choosing a replacement resets those sets.' : 'Removing it deletes those sets from this workout.'}</p>
+                    <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                        <button type="button" className="btn-danger flex-1" onClick={applyChange}>{pendingChange.type === 'swap' ? 'Choose replacement' : 'Remove exercise'}</button>
+                        <button type="button" className="btn-secondary flex-1" onClick={() => setPendingChange(null)}>Keep exercise</button>
+                    </div>
+                </Sheet>
+            )}
             {confirmDiscard && (
                 <Sheet open title="Discard workout?" onClose={() => setConfirmDiscard(false)}>
                     <p className="text-sm text-ink-400">
@@ -523,6 +576,9 @@ const ExerciseCard = React.memo(function ExerciseCard({
     onToggle,
     onChangeSet,
     onCompleteSet,
+    onUndoSet,
+    nextEntry,
+    onAdvance,
     onAddSet,
     onSwap,
     onRemove,
@@ -557,10 +613,11 @@ const ExerciseCard = React.memo(function ExerciseCard({
     return (
         <div
             className={clsx(
-                'surface overflow-hidden transition-all duration-200 mesh-border',
+                'surface scroll-mt-36 overflow-hidden transition-all duration-200 mesh-border',
                 open && !isDone && 'glass-card-glow',
                 isDone && 'glass-card-glow-success',
             )}
+            id={`exercise-${entry.key}`}
         >
             <button
                 type="button"
@@ -639,10 +696,14 @@ const ExerciseCard = React.memo(function ExerciseCard({
                             index={setIdx}
                             ghost={previous?.sets?.[setIdx] ?? null}
                             onChange={(patch) => onChangeSet(entry.key, setIdx, patch)}
-                            onComplete={() => onCompleteSet(entry, setIdx)}
+                            onComplete={(values) => onCompleteSet(entry, setIdx, values)}
+                            onUndo={() => onUndoSet(entry, setIdx)}
                         />
                     ))}
 
+                    {isDone && nextEntry && (
+                        <button type="button" className="btn-primary w-full" onClick={() => onAdvance(nextEntry.key)}>Next: {db.exercises.byId(nextEntry.exerciseId)?.name ?? 'exercise'} <Play className="h-4 w-4 shrink-0" /></button>
+                    )}
                     <div className="flex gap-2 pt-1">
                         <button type="button" onClick={() => onAddSet(entry.key)} className="btn-secondary flex-1 py-2 text-xs">
                             <Plus className="h-3.5 w-3.5" /> Set
@@ -707,7 +768,7 @@ function SummarySheet({ summary, unit, displayWeight, onClose }) {
                 )}
 
                 <p className="text-sm text-ink-400">
-                    {workout.sets.length} working sets logged. Saved on this device
+                    {workout.sets.filter(set => !set.isWarmup).length} working sets{workout.sets.some(set => set.isWarmup) ? ` + ${workout.sets.filter(set => set.isWarmup).length} warmup sets` : ''} logged. Saved on this device
                     {' — '}syncs automatically when you're signed in.
                 </p>
 

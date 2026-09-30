@@ -30,10 +30,8 @@ export function cleanupWebGL(gl, resources) {
     if (resources.vs) gl.deleteShader(resources.vs);
     if (resources.fs) gl.deleteShader(resources.fs);
     if (resources.prog) gl.deleteProgram(resources.prog);
-    try {
-        const ext = gl.getExtension('WEBGL_lose_context');
-        if (ext) ext.loseContext();
-    } catch (_) {}
+    // React StrictMode reuses this canvas after effect cleanup. Release
+    // resources without permanently losing the context needed on remount.
 }
 
 export function createQuadBuffer(gl) {

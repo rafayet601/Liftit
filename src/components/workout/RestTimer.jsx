@@ -1,145 +1,65 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { TimerOff, Plus } from 'lucide-react';
+import { Plus, TimerOff, Check } from 'lucide-react';
 import { hapticSuccess } from '../../lib/platform';
 
-/**
- * Rest countdown with circular SVG ring. Mounts when a set is completed
- * (key it by set id to restart), ticks down, haptics + auto-dismiss at zero.
- * Tap +30s to extend, or skip.
- */
-export default function RestTimer({ seconds = 120, onDone }) {
-    const [remaining, setRemaining] = useState(seconds);
+/** Uses a deadline so sleep, background tabs and input rerenders cannot slow rest. */
+export default function RestTimer({ seconds = 120, endAt, exerciseName, onExtend, onDone }) {
+    const [deadline, setDeadline] = useState(() => endAt ?? Date.now() + seconds * 1000);
     const [total, setTotal] = useState(seconds);
-    const doneRef = useRef(false);
+    const [now, setNow] = useState(() => Date.now());
+    const notified = useRef(false);
+    const remaining = Math.max(0, Math.ceil((deadline - now) / 1000));
+    const ready = remaining === 0;
 
     useEffect(() => {
-        const id = setInterval(() => {
-            setRemaining((r) => {
-                if (r <= 1) {
-                    clearInterval(id);
-                    if (!doneRef.current) {
-                        doneRef.current = true;
-                        hapticSuccess();
-                        setTimeout(() => onDone?.(), 600);
-                    }
-                    return 0;
-                }
-                return r - 1;
-            });
-        }, 1000);
-        return () => clearInterval(id);
-    }, [onDone]);
+        const tick = () => setNow(Date.now());
+        const id = setInterval(tick, 250);
+        document.addEventListener('visibilitychange', tick);
+        window.addEventListener('focus', tick);
+        return () => {
+            clearInterval(id);
+            document.removeEventListener('visibilitychange', tick);
+            window.removeEventListener('focus', tick);
+        };
+    }, []);
+    useEffect(() => {
+        if (ready && !notified.current) {
+            notified.current = true;
+            hapticSuccess();
+        }
+    }, [ready]);
 
-    const pct = total > 0 ? remaining / total : 0;
-    const m = Math.floor(remaining / 60);
-    const s = String(remaining % 60).padStart(2, '0');
-
-    // SVG ring dimensions
-    const SIZE = 72;
-    const STROKE = 5;
-    const R = (SIZE - STROKE) / 2;
-    const CIRC = 2 * Math.PI * R;
-    const offset = CIRC * (1 - pct);
-
-    // Color: green when plenty of time, purple when low, red when very low
-    const ringColor =
-        pct > 0.4 ? '#4ade80' : pct > 0.2 ? '#8b5cf6' : '#f87171';
+    const extend = () => {
+        const next = Math.max(deadline, Date.now()) + 30000;
+        const nextTotal = ready ? 30 : total + 30;
+        notified.current = false;
+        setDeadline(next);
+        setTotal(nextTotal);
+        setNow(Date.now());
+        onExtend?.(next, nextTotal);
+    };
+    const size = 56, radius = 24, circumference = 2 * Math.PI * radius;
+    const fraction = total > 0 ? Math.min(1, remaining / total) : 0;
 
     return (
-        <div className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 mx-auto max-w-md md:left-72 md:right-8 md:bottom-8 md:mx-0 md:ml-auto">
-            <div
-                className="overflow-hidden rounded-2xl"
-                style={{
-                    background: 'rgba(11, 11, 12, 0.92)',
-                    backdropFilter: 'blur(24px)',
-                    WebkitBackdropFilter: 'blur(24px)',
-                    border: `1px solid ${ringColor}30`,
-                    boxShadow: `0 0 0 1px ${ringColor}15 inset, 0 8px 32px rgba(0,0,0,0.5), 0 0 24px -8px ${ringColor}40`,
-                }}
-            >
-                <div className="flex items-center gap-4 px-4 py-3">
-                    {/* Circular ring */}
-                    <div className="relative flex-shrink-0">
-                        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-                            <defs>
-                                <linearGradient id="timerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" stopColor={ringColor} />
-                                    <stop offset="100%" stopColor={pct > 0.4 ? '#22c55e' : pct > 0.2 ? '#a78bfa' : '#ef4444'} />
-                                </linearGradient>
-                            </defs>
-                            {/* Track */}
-                            <circle
-                                cx={SIZE / 2}
-                                cy={SIZE / 2}
-                                r={R}
-                                fill="none"
-                                stroke="rgba(255,255,255,0.06)"
-                                strokeWidth={STROKE}
-                            />
-                            {/* Fill */}
-                            <circle
-                                cx={SIZE / 2}
-                                cy={SIZE / 2}
-                                r={R}
-                                fill="none"
-                                stroke="url(#timerGrad)"
-                                strokeWidth={STROKE}
-                                strokeLinecap="round"
-                                strokeDasharray={CIRC}
-                                strokeDashoffset={offset}
-                                transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
-                                style={{
-                                    transition: 'stroke-dashoffset 1s linear',
-                                    filter: `drop-shadow(0 0 4px ${ringColor}70)`,
-                                }}
-                            />
-                            {/* Center text */}
-                            <text
-                                x={SIZE / 2}
-                                y={SIZE / 2 + 1}
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                fontSize="14"
-                                fontWeight="700"
-                                fill="#f7f6f4"
-                                fontFamily="Space Grotesk"
-                            >
-                                {m}:{s}
-                            </text>
+        <section aria-label="Rest timer" className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 mx-auto max-w-md md:left-72 md:right-8 md:bottom-8 md:mx-0 md:ml-auto">
+            <div className={`rounded-2xl border p-3 shadow-card backdrop-blur-xl ${ready ? 'border-emerald-400/30 bg-ink-950/95' : 'border-accent/30 bg-ink-950/95'}`}>
+                <div className="flex items-center gap-3">
+                    <div className="relative h-14 w-14 shrink-0">
+                        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+                            <circle cx="28" cy="28" r={radius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
+                            <circle cx="28" cy="28" r={radius} fill="none" stroke={ready ? '#4ade80' : '#b8a0ff'} strokeWidth="4" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={ready ? 0 : circumference * (1 - fraction)} transform="rotate(-90 28 28)" />
                         </svg>
+                        <span role="timer" aria-label="Rest remaining" className="absolute inset-0 flex items-center justify-center text-sm font-bold tabular-nums text-white">{ready ? <Check aria-hidden="true" className="h-5 w-5 text-emerald-300" /> : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`}</span>
                     </div>
-
-                    {/* Labels + controls */}
-                    <div className="flex flex-1 items-center justify-between">
-                        <div>
-                            <div className="eyebrow mb-0.5">Rest</div>
-                            <div className="text-sm text-ink-400">
-                                {remaining > 0 ? 'Recovery time' : 'Done — get after it!'}
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setRemaining((r) => r + 30);
-                                    setTotal((t) => t + 30);
-                                }}
-                                className="btn-secondary px-3 py-2 text-xs"
-                            >
-                                <Plus className="h-3.5 w-3.5" /> 30s
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onDone?.()}
-                                className="btn-ghost px-3 py-2 text-xs"
-                                aria-label="Skip rest"
-                            >
-                                <TimerOff className="h-4 w-4" />
-                            </button>
-                        </div>
+                    <div className="min-w-0 flex-1">
+                        <p role="status" className={`text-sm font-semibold ${ready ? 'text-emerald-300' : 'text-white'}`}>{ready ? 'Rest complete' : 'Rest between sets'}</p>
+                        <p className="mt-1 truncate text-xs text-ink-400">{exerciseName || 'Take a breather'}</p>
                     </div>
+                    <button type="button" onClick={extend} className="btn-secondary min-h-11 px-2.5 text-xs" aria-label="Add 30 seconds to rest"><Plus className="h-3.5 w-3.5" />30s</button>
+                    <button type="button" onClick={onDone} className="btn-ghost min-h-11 min-w-11 px-2" aria-label={ready ? 'Dismiss rest timer' : 'Skip rest'}><TimerOff className="h-4 w-4" /></button>
                 </div>
             </div>
-        </div>
+        </section>
     );
 }
