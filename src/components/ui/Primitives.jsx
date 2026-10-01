@@ -270,7 +270,7 @@ export function Sheet({ open = true, onClose, title, children, wide = false }) {
 /** Segmented control for small exclusive choices. */
 export function Segmented({ options, value, onChange, className, label }) {
     const groupRef = useRef(null);
-    const mobileColumns = options.length > 3 && options.some(option => String(typeof option === 'string' ? option : option.label).length > 5) ? 3 : options.length;
+    const mobileColumns = options.length > 3 && options.some(option => String(typeof option === 'string' ? option : option.label).length > 5) ? (options.length === 4 ? 2 : 3) : options.length;
     const selectWithKeyboard = (event, index) => {
         const direction = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
         if (!direction && event.key !== 'Home' && event.key !== 'End') return;

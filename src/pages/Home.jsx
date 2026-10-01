@@ -149,7 +149,7 @@ export default function Home() {
     const recentPRs = useMemo(() => prTimeline(workouts, 4), [workouts]);
 
     const week = program ? currentProgramWeek(program) : null;
-    const phase = program ? phaseForWeek(week, program.durationWeeks) : null;
+    const phase = program ? phaseForWeek(week, program.durationWeeks, program.goal) : null;
     const thisWeekCount = useMemo(() => {
         const weekAgo = new Date().getTime() - 7 * 24 * 3600 * 1000;
         return workouts.filter((w) => new Date(w.startedAt).getTime() >= weekAgo).length;
@@ -203,7 +203,7 @@ export default function Home() {
                         {program && <span className="text-xs text-ink-300">Week {week} of {program.durationWeeks} · {phase.name}</span>}
                     </div>
                     <h2 className="font-display text-3xl font-bold text-white md:text-[40px] leading-tight">{session?.name || nextDay?.name || 'Make today a training day.'}</h2>
-                    <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-300">{session ? 'Your workout is saved. Pick up right where you left off.' : nextDay ? `${nextDay.exercises.length} exercises · ${nextDay.exercises.reduce((total, ex) => total + scaleTargetsForWeek(ex, week, program.durationWeeks).targetSets, 0)} planned sets. ${phase.blurb}` : workouts.length ? 'Build on your last session with a freestyle workout, or create a plan for the weeks ahead.' : 'Log your first session and the engine starts working for you.'}</p>
+                    <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-300">{session ? 'Your workout is saved. Pick up right where you left off.' : nextDay ? `${nextDay.exercises.length} exercises · ${nextDay.exercises.reduce((total, ex) => total + scaleTargetsForWeek(ex, week, program.durationWeeks, program.goal).targetSets, 0)} planned sets. ${phase.blurb}` : workouts.length ? 'Build on your last session with a freestyle workout, or create a plan for the weeks ahead.' : 'Log your first session and the engine starts working for you.'}</p>
                     <div className="mt-6 flex flex-wrap items-center gap-3">
                         <Link to="/workout" className="btn-primary px-4 py-3 sm:btn-lg" id="home-start-workout-btn"><PlayCircle className="h-5 w-5" />{session ? 'Resume Workout' : 'Start Workout'}<ArrowRight className="h-4 w-4" /></Link>
                         <Link to="/program" className="inline-flex items-center gap-1 text-sm font-semibold text-ink-300 hover:text-accent">{program ? 'View plan' : 'Create program'}<ArrowUpRight className="h-4 w-4" /></Link>

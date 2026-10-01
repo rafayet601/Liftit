@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Dumbbell, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
 import { db } from '../data/db';
 import { generateProgram, GOALS } from '../engine/generator';
+import { GLUTE_GOAL, GLUTE_INTRO, LOWER_DAY_OPTIONS, trainingDaysForGoal, updateTrainingConfig } from '../engine/gluteFocused';
 import { Segmented, Card } from '../components/ui/Primitives';
 import { hapticSuccess } from '../lib/platform';
 import Glass from '../components/ui/Glass';
@@ -22,6 +23,7 @@ export default function Onboarding() {
         experience: 'intermediate',
         goal: 'hypertrophy',
         daysPerWeek: 4,
+        lowerBodyDays: 3,
     });
 
     const finish = (withProgram) => {
@@ -38,6 +40,8 @@ export default function Onboarding() {
                     goal: form.goal,
                     experience: form.experience,
                     daysPerWeek: form.daysPerWeek,
+                    lowerBodyDays: form.lowerBodyDays,
+                    durationWeeks: form.goal === GLUTE_GOAL ? 8 : 6,
                 }),
             );
         }
@@ -122,20 +126,25 @@ export default function Onboarding() {
                                     <Segmented
                                         label="Main goal"
                                 value={form.goal}
-                                        onChange={(goal) => setForm((f) => ({ ...f, goal }))}
+                                        onChange={(goal) => setForm((f) => updateTrainingConfig(f, { goal }))}
                                         options={Object.entries(GOALS).map(([value, g]) => ({
                                             value,
                                             label: g.label,
                                         }))}
                                     />
+                                    {form.goal === GLUTE_GOAL && <p className="mt-3 text-sm leading-relaxed text-ink-400">{GLUTE_INTRO}</p>}
                                 </div>
+                                {form.goal === GLUTE_GOAL && <div>
+                                    <div className="eyebrow mb-2">Lower-body days</div>
+                                    <Segmented label="Lower-body days" value={form.lowerBodyDays} onChange={lowerBodyDays => setForm(f => updateTrainingConfig(f, { lowerBodyDays }))} options={LOWER_DAY_OPTIONS} />
+                                </div>}
                                 <div>
                                     <div className="eyebrow mb-2">Days per week</div>
                                     <Segmented
                                         label="Days per week"
                                 value={form.daysPerWeek}
                                         onChange={(daysPerWeek) => setForm((f) => ({ ...f, daysPerWeek }))}
-                                        options={[2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))}
+                                        options={trainingDaysForGoal(form.goal, form.lowerBodyDays).map((n) => ({ value: n, label: String(n) }))}
                                     />
                                 </div>
                             </div>
@@ -145,7 +154,7 @@ export default function Onboarding() {
                     {step === 3 && (
                         <StepShell
                             title="Want a program built now?"
-                            subtitle={`A ${form.daysPerWeek}-day ${GOALS[form.goal].label.toLowerCase()} block, periodized over 6 weeks, ready before you blink. You can also start freestyle and add one later.`}
+                            subtitle={`A ${form.daysPerWeek}-day ${GOALS[form.goal].label.toLowerCase()} block over ${form.goal === GLUTE_GOAL ? 8 : 6} weeks. ${form.goal === GLUTE_GOAL ? `${form.lowerBodyDays} lower-body days with upper-body training included. ` : ''}You can also start freestyle and add a program later.`}
                         >
                             <div className="space-y-2.5">
                                 <button type="button" onClick={() => finish(true)} className="btn-primary btn-lg w-full">

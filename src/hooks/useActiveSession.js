@@ -53,13 +53,14 @@ export function startSession({ name, programId = null, programDayNumber = null, 
     });
 }
 
-export function makeSessionExercise({ exerciseId, targetSets = 3, targetRepsMin = 8, targetRepsMax = 12, targetRpe = 8, restSec = 120, suggestedWeight = null }) {
+export function makeSessionExercise({ exerciseId, targetSets = 3, targetRepsMin = 8, targetRepsMax = 12, targetRpe = 8, restSec = 120, suggestedWeight = null, notes = '' }) {
     return {
         key: uid('sx'),
         exerciseId,
         targetSets,
         targetRepsMin,
         targetRepsMax,
+        notes,
         targetRpe,
         restSec,
         sets: Array.from({ length: targetSets }, () => ({
@@ -139,6 +140,7 @@ export function applySessionAction(action) {
             const target = d.exercises.find((e) => e.key === action.exerciseKey);
             if (!target) return;
             target.exerciseId = newExercise.id;
+            target.notes = '';
             target.sets = Array.from({ length: target.targetSets }, () => ({
                 weight: 0,
                 reps: 0,

@@ -49,6 +49,8 @@ export const EXERCISE_LIBRARY = [
     ex('dips', 'Dips', 'chest', 'bodyweight', { compound: true, secondary: ['triceps', 'shoulders'] }),
 
     /* ---------------- Back ---------------- */
+    ex('kettlebell-row', 'Kettlebell Row', 'back', 'kettlebell', { compound: true, secondary: ['biceps'] }),
+    ex('dumbbell-pullover', 'Dumbbell Pullover', 'back', 'dumbbell', { secondary: ['chest'] }),
     ex('conventional-deadlift', 'Conventional Deadlift', 'back', 'barbell', { compound: true, secondary: ['hamstrings', 'glutes', 'core'] }),
     ex('barbell-row', 'Barbell Row', 'back', 'barbell', { compound: true, secondary: ['biceps', 'shoulders'] }),
     ex('pull-up', 'Pull-Up', 'back', 'bodyweight', { compound: true, secondary: ['biceps'] }),
@@ -63,6 +65,7 @@ export const EXERCISE_LIBRARY = [
     ex('rack-pull', 'Rack Pull', 'back', 'barbell', { compound: true, secondary: ['glutes', 'hamstrings'] }),
 
     /* ---------------- Shoulders ---------------- */
+    ex('pike-push-up', 'Pike Push-Up', 'shoulders', 'bodyweight', { compound: true, secondary: ['triceps'] }),
     ex('overhead-press', 'Overhead Press', 'shoulders', 'barbell', { compound: true, secondary: ['triceps', 'core'] }),
     ex('seated-dumbbell-press', 'Seated Dumbbell Press', 'shoulders', 'dumbbell', { compound: true, secondary: ['triceps'] }),
     ex('machine-shoulder-press', 'Machine Shoulder Press', 'shoulders', 'machine', { compound: true, secondary: ['triceps'] }),
@@ -83,6 +86,7 @@ export const EXERCISE_LIBRARY = [
     ex('ez-bar-curl', 'EZ-Bar Curl', 'biceps', 'barbell'),
 
     /* ---------------- Triceps ---------------- */
+    ex('close-grip-push-up', 'Close-Grip Push-Up', 'triceps', 'bodyweight', { compound: true, secondary: ['chest', 'shoulders'] }),
     ex('cable-pushdown', 'Cable Pushdown', 'triceps', 'cable'),
     ex('overhead-cable-extension', 'Overhead Cable Extension', 'triceps', 'cable'),
     ex('skull-crusher', 'Skull Crusher', 'triceps', 'barbell'),
@@ -91,6 +95,9 @@ export const EXERCISE_LIBRARY = [
     ex('bench-dips', 'Bench Dips', 'triceps', 'bodyweight', { secondary: ['chest'] }),
 
     /* ---------------- Quads ---------------- */
+    ex('bodyweight-squat', 'Bodyweight Squat', 'quads', 'bodyweight', { compound: true, secondary: ['glutes', 'core'] }),
+    ex('bodyweight-split-squat', 'Bodyweight Split Squat', 'quads', 'bodyweight', { compound: true, secondary: ['glutes'] }),
+    ex('reverse-lunge', 'Reverse Lunge', 'quads', 'bodyweight', { compound: true, secondary: ['glutes'] }),
     ex('barbell-back-squat', 'Barbell Back Squat', 'quads', 'barbell', { compound: true, secondary: ['glutes', 'hamstrings', 'core'] }),
     ex('front-squat', 'Front Squat', 'quads', 'barbell', { compound: true, secondary: ['glutes', 'core'] }),
     ex('leg-press', 'Leg Press', 'quads', 'machine', { compound: true, secondary: ['glutes'] }),
@@ -101,6 +108,8 @@ export const EXERCISE_LIBRARY = [
     ex('goblet-squat', 'Goblet Squat', 'quads', 'kettlebell', { compound: true, secondary: ['glutes', 'core'] }),
 
     /* ---------------- Hamstrings ---------------- */
+    ex('kettlebell-rdl', 'Kettlebell Romanian Deadlift', 'hamstrings', 'kettlebell', { compound: true, secondary: ['glutes'] }),
+    ex('hamstring-walkout', 'Hamstring Walkout', 'hamstrings', 'bodyweight', { secondary: ['glutes'] }),
     ex('romanian-deadlift', 'Romanian Deadlift', 'hamstrings', 'barbell', { compound: true, secondary: ['glutes', 'back'] }),
     ex('dumbbell-rdl', 'Dumbbell RDL', 'hamstrings', 'dumbbell', { compound: true, secondary: ['glutes'] }),
     ex('lying-leg-curl', 'Lying Leg Curl', 'hamstrings', 'machine'),
@@ -110,6 +119,9 @@ export const EXERCISE_LIBRARY = [
     ex('sumo-deadlift', 'Sumo Deadlift', 'hamstrings', 'barbell', { compound: true, secondary: ['glutes', 'quads', 'back'] }),
 
     /* ---------------- Glutes ---------------- */
+    ex('dumbbell-hip-thrust', 'Dumbbell Hip Thrust', 'glutes', 'dumbbell', { compound: true, secondary: ['hamstrings'] }),
+    ex('side-lying-hip-abduction', 'Side-Lying Hip Abduction', 'glutes', 'bodyweight'),
+    ex('quadruped-hip-extension', 'Quadruped Hip Extension', 'glutes', 'bodyweight'),
     ex('barbell-hip-thrust', 'Barbell Hip Thrust', 'glutes', 'barbell', { compound: true, secondary: ['hamstrings'] }),
     ex('glute-bridge', 'Glute Bridge', 'glutes', 'bodyweight', { secondary: ['hamstrings'] }),
     ex('cable-kickback', 'Cable Kickback', 'glutes', 'cable'),
@@ -122,6 +134,7 @@ export const EXERCISE_LIBRARY = [
     ex('single-leg-calf-raise', 'Single-Leg Calf Raise', 'calves', 'bodyweight'),
 
     /* ---------------- Core ---------------- */
+    ex('plank-shoulder-tap', 'Plank Shoulder Tap', 'core', 'bodyweight', { secondary: ['shoulders'] }),
     ex('plank', 'Plank', 'core', 'bodyweight'),
     ex('hanging-leg-raise', 'Hanging Leg Raise', 'core', 'bodyweight'),
     ex('cable-crunch', 'Cable Crunch', 'core', 'cable'),

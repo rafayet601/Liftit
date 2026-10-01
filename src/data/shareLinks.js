@@ -113,7 +113,7 @@ function sanitizeProgram(raw) {
     program.name = clampText(program.name, MAX_NAME_CHARS) || 'Shared Program';
     program.description = clampText(program.description, MAX_TEXT_CHARS);
     program.rationale = clampText(program.rationale, MAX_TEXT_CHARS);
-    program.goal = ['strength', 'hypertrophy', 'general'].includes(program.goal)
+    program.goal = ['strength', 'hypertrophy', 'general', 'glute-focused'].includes(program.goal)
         ? program.goal
         : 'general';
     program.experience = ['beginner', 'intermediate', 'advanced'].includes(program.experience)
