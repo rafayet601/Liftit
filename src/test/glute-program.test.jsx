@@ -95,6 +95,7 @@ describe('Glute Focused flows', () => {
         fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Days per week' })).getByRole('radio', { name: '5', exact: true }));
         fireEvent.click(screen.getByRole('radio', { name: '12 weeks' }));
         expect(screen.getByRole('region', { name: 'Glute Focused guide' })).toHaveTextContent('Whole Legs');
+        fireEvent.click(screen.getByText('Research behind the plan'));
         expect(screen.getByRole('link', { name: /ACSM/ })).toHaveAttribute('href', 'https://acsm.org/resistance-training-guidelines-update-2026/');
         fireEvent.click(screen.getByRole('button', { name: 'Start this program' }));
         expect(db.programs.getActive()).toMatchObject({ goal: GLUTE_GOAL, daysPerWeek: 5, durationWeeks: 12 });
