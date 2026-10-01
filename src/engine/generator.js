@@ -8,6 +8,7 @@
  */
 
 import { getLibraryExercise } from '../data/exercises';
+import { GLUTE_GOAL, generateGluteDays, gluteRationale } from './gluteFocused';
 
 /* ------------------------------------------------------------------ */
 /* Goal parameters                                                     */
@@ -32,6 +33,10 @@ export const GOALS = {
         isolation: { sets: 3, repsMin: 10, repsMax: 15, rpe: 7.5, restSec: 75 },
         summary: 'a balanced mix of strength and conditioning volume',
     },
+    [GLUTE_GOAL]: {
+        label: 'Glute Focused',
+        summary: 'two or three lower-body days with balanced upper-body training',
+    },
 };
 
 /* ------------------------------------------------------------------ */
@@ -39,9 +44,14 @@ export const GOALS = {
 /* ------------------------------------------------------------------ */
 
 /** Phase plan for a block of `durationWeeks`; last week is always a deload. */
-export function phaseForWeek(week, durationWeeks) {
+export function phaseForWeek(week, durationWeeks, goal) {
     if (week >= durationWeeks) {
         return { name: 'Deload', setScale: 0.5, rpeOffset: -2, blurb: 'Half volume, easy effort. Recover.' };
+    }
+    if (goal === GLUTE_GOAL) {
+        return week <= 2
+            ? { name: 'Foundation', setScale: 1, rpeOffset: -0.5, blurb: 'Practice technique, find your starting loads and leave a little extra in reserve.' }
+            : { name: 'Build', setScale: 1, rpeOffset: 0, blurb: 'Keep quality sets steady. Add reps, then load as your performance allows.' };
     }
     const trainingWeeks = durationWeeks - 1;
     const ratio = week / trainingWeeks;
@@ -222,9 +232,21 @@ export function generateProgram(params = {}) {
     const goalKey = GOALS[params.goal] ? params.goal : 'hypertrophy';
     const goal = GOALS[goalKey];
     const experience = params.experience ?? 'intermediate';
-    const daysPerWeek = clamp(params.daysPerWeek ?? 4, 2, 6);
-    const durationWeeks = clamp(params.durationWeeks ?? 6, 4, 12);
+    const lowerBodyDays = params.lowerBodyDays === 2 ? 2 : 3;
+    const daysPerWeek = clamp(params.daysPerWeek ?? (goalKey === GLUTE_GOAL ? 5 : 4), goalKey === GLUTE_GOAL ? lowerBodyDays : 2, goalKey === GLUTE_GOAL ? lowerBodyDays + 2 : 6);
+    const durationWeeks = clamp(params.durationWeeks ?? (goalKey === GLUTE_GOAL ? 8 : 6), 4, 12);
     const allowedEquipment = EQUIPMENT_PRESETS[params.equipment ?? 'full'] ?? null;
+
+    if (goalKey === GLUTE_GOAL) {
+        return {
+            name: 'Glute Focused · Quads / Glutes / Upper',
+            description: `${daysPerWeek}-day block · ${lowerBodyDays} lower-body sessions + upper body`,
+            goal: goalKey, experience, daysPerWeek, durationWeeks,
+            startDate: new Date().toISOString(), isActive: true,
+            rationale: gluteRationale(daysPerWeek, experience, durationWeeks, lowerBodyDays),
+            days: generateGluteDays(daysPerWeek, experience, allowedEquipment, lowerBodyDays),
+        };
+    }
 
     const split =
         daysPerWeek <= 3 ? SPLITS.fullBody3 : daysPerWeek === 4 ? SPLITS.upperLower4 : SPLITS.ppl;
@@ -262,8 +284,7 @@ export function generateProgram(params = {}) {
     }
 
     const rationale =
-        `${split.name} split because you train ${daysPerWeek} days a week — every muscle is hit ` +
-        `${daysPerWeek <= 4 ? '2×' : '~2×'} per week, which research consistently favors. ` +
+        `${split.name} split distributes your training across ${daysPerWeek} days a week. ` +
         `Targets are set for ${goal.label.toLowerCase()}: ${goal.summary}. ` +
         `The ${durationWeeks}-week block builds volume first (accumulation), then trades volume for ` +
         `intensity (intensification → realization), and ends with a deload so you start the next block fresh. ` +
@@ -292,8 +313,8 @@ export function currentProgramWeek(program, now = new Date()) {
 }
 
 /** Apply the current phase's scaling to a program-day exercise target. */
-export function scaleTargetsForWeek(exerciseTarget, week, durationWeeks) {
-    const phase = phaseForWeek(week, durationWeeks);
+export function scaleTargetsForWeek(exerciseTarget, week, durationWeeks, goal) {
+    const phase = phaseForWeek(week, durationWeeks, goal);
     return {
         ...exerciseTarget,
         targetSets: Math.max(1, Math.round(exerciseTarget.targetSets * phase.setScale)),

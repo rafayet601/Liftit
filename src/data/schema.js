@@ -80,7 +80,7 @@ export function createProgram(partial = {}) {
         id: partial.id ?? uid('prog'),
         name: partial.name ?? 'My Program',
         description: partial.description ?? '',
-        goal: partial.goal ?? 'hypertrophy', // strength | hypertrophy | general
+        goal: partial.goal ?? 'hypertrophy', // strength | hypertrophy | general | glute-focused
         experience: partial.experience ?? 'intermediate',
         daysPerWeek: intOr(partial.daysPerWeek, 4),
         durationWeeks: intOr(partial.durationWeeks, 6),

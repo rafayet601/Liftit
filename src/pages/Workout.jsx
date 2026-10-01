@@ -57,7 +57,7 @@ function SessionLauncher() {
     const { unit, displayWeight } = useUnit();
 
     const week = program ? currentProgramWeek(program) : 1;
-    const phase = program ? phaseForWeek(week, program.durationWeeks) : null;
+    const phase = program ? phaseForWeek(week, program.durationWeeks, program.goal) : null;
 
     // Recommended next day: the one after the last logged day of this program.
     const nextDayNumber = useMemo(() => {
@@ -70,7 +70,7 @@ function SessionLauncher() {
     const begin = (day) => {
         hapticMedium();
         const exercises = day.exercises.map((target) => {
-            const scaled = scaleTargetsForWeek(target, week, program.durationWeeks);
+            const scaled = scaleTargetsForWeek(target, week, program.durationWeeks, program.goal);
             const exercise = db.exercises.byId(target.exerciseId);
             const suggestion = suggestNextSession(
                 sessionsForExercise(workouts, target.exerciseId, 4),
@@ -85,6 +85,7 @@ function SessionLauncher() {
                 targetRpe: scaled.targetRpe,
                 restSec: target.restSec,
                 suggestedWeight: suggestion.weight,
+                notes: target.notes,
             });
         });
         startSession({
@@ -173,6 +174,7 @@ function SessionLauncher() {
                                 <button
                                     type="button"
                                     onClick={() => begin(day)}
+                                    aria-label={`Start ${day.name}`}
                                     className={recommended ? 'btn-primary' : 'btn-secondary'}
                                 >
                                     <Play className="h-4 w-4" /> Start
@@ -658,6 +660,7 @@ const ExerciseCard = React.memo(function ExerciseCard({
 
             {open && (
                 <div className="space-y-2.5 border-t border-white/[0.07] p-3.5">
+                    {entry.notes && <p className="rounded-xl bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-ink-400">{entry.notes}</p>}
                     {/* Engine suggestion — rule-based, honestly labeled */}
                     {suggestion.action !== 'start' && (
                         <div className="flex items-start gap-2 rounded-xl border border-accent/15 bg-accent/[0.06] px-3 py-2.5">

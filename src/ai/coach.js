@@ -9,6 +9,7 @@ import { currentProgramWeek, phaseForWeek } from '../engine/generator';
 import { suggestNextSession, sessionsForExercise } from '../engine/progression';
 import { workoutVolume, trainingStreak } from '../engine/analytics';
 import { getActiveSession } from '../hooks/useActiveSession';
+import { GLUTE_GOAL } from '../engine/gluteFocused';
 
 export function buildCoachSystemPrompt() {
     const settings = db.settings.get();
@@ -26,12 +27,13 @@ export function buildCoachSystemPrompt() {
 
     if (program) {
         const week = currentProgramWeek(program);
-        const phase = phaseForWeek(week, program.durationWeeks);
+        const phase = phaseForWeek(week, program.durationWeeks, program.goal);
         lines.push(
             `Program: ${program.name}, week ${week}/${program.durationWeeks} (${phase.name}). Days: ${program.days
                 .map((d) => d.name)
                 .join(', ')}.`,
         );
+        if (program.goal === GLUTE_GOAL) lines.push(`Glute Focused guidance: ${program.rationale}`, 'Keep quad and glute emphasis days, optional Whole Legs, and balanced upper-body work. Tailor load and recovery to the individual. Do not prescribe mandatory menstrual-phase schedules or stereotyped lighter weights.');
     } else {
         lines.push('Program: none active (training freestyle).');
     }

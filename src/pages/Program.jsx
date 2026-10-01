@@ -17,6 +17,8 @@ import clsx from 'clsx';
 import { db } from '../data/db';
 import { useActiveProgram } from '../data/DataProvider';
 import { generateProgram, currentProgramWeek, phaseForWeek, scaleTargetsForWeek, GOALS } from '../engine/generator';
+import { GLUTE_GOAL, GLUTE_INTRO, LOWER_DAY_OPTIONS, trainingDaysForGoal, updateTrainingConfig } from '../engine/gluteFocused';
+import GluteGuide from '../components/program/GluteGuide';
 import { buildShareUrl, programFromFragment } from '../data/shareLinks';
 import ExercisePicker from '../components/workout/ExercisePicker';
 import { Card, Chip, PageHeader, ProgressBar, Segmented, Sheet } from '../components/ui/Primitives';
@@ -65,7 +67,7 @@ function ProgramView({ program, onNew }) {
     const [viewWeek, setViewWeek] = useState(week);
     const [editTarget, setEditTarget] = useState(null); // { dayNumber, index } | { dayNumber, add: true }
     const [showWhy, setShowWhy] = useState(false);
-    const phase = phaseForWeek(viewWeek, program.durationWeeks);
+    const phase = phaseForWeek(viewWeek, program.durationWeeks, program.goal);
 
     const share = async () => {
         try {
@@ -99,6 +101,7 @@ function ProgramView({ program, onNew }) {
                 });
             } else {
                 day.exercises[editTarget.index].exerciseId = exercise.id;
+                day.exercises[editTarget.index].notes = '';
             }
         });
         setEditTarget(null);
@@ -136,10 +139,10 @@ function ProgramView({ program, onNew }) {
                             Week {week} of {program.durationWeeks}
                         </div>
                         <h2 className="font-display text-2xl font-bold text-white">
-                            <span className="text-gradient-purple">{phaseForWeek(week, program.durationWeeks).name}</span> phase
+                            <span className="text-gradient-purple">{phaseForWeek(week, program.durationWeeks, program.goal).name}</span> phase
                         </h2>
                         <p className="mt-1 text-sm text-ink-400">
-                            {phaseForWeek(week, program.durationWeeks).blurb}
+                            {phaseForWeek(week, program.durationWeeks, program.goal).blurb}
                         </p>
                     </div>
                     {program.rationale && (
@@ -151,7 +154,7 @@ function ProgramView({ program, onNew }) {
                 <ProgressBar value={(week / program.durationWeeks) * 100} />
                 <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
                     {Array.from({ length: program.durationWeeks }, (_, i) => i + 1).map((w) => {
-                        const p = phaseForWeek(w, program.durationWeeks);
+                        const p = phaseForWeek(w, program.durationWeeks, program.goal);
                         return (
                             <button
                                 key={w}
@@ -195,6 +198,7 @@ function ProgramView({ program, onNew }) {
                         day={day}
                         viewWeek={viewWeek}
                         durationWeeks={program.durationWeeks}
+                        goal={program.goal}
                         onSwap={(index) => setEditTarget({ dayNumber: day.dayNumber, index })}
                         onAdd={() => setEditTarget({ dayNumber: day.dayNumber, add: true })}
                         onRemove={(index) =>
@@ -225,6 +229,7 @@ function ProgramView({ program, onNew }) {
             )}
             {showWhy && (
                 <Sheet open title="Why this program" onClose={() => setShowWhy(false)}>
+                    <GluteGuide program={program} />
                     <p className="text-sm leading-relaxed text-ink-300">{program.rationale}</p>
                 </Sheet>
             )}
@@ -232,7 +237,7 @@ function ProgramView({ program, onNew }) {
     );
 }
 
-function DayCard({ day, viewWeek, durationWeeks, onSwap, onAdd, onRemove, onAdjustSets }) {
+function DayCard({ day, viewWeek, durationWeeks, goal, onSwap, onAdd, onRemove, onAdjustSets }) {
     const [open, setOpen] = useState(false);
     return (
         <Card padded={false} className="overflow-hidden holo-card">
@@ -256,7 +261,7 @@ function DayCard({ day, viewWeek, durationWeeks, onSwap, onAdd, onRemove, onAdju
                 <div className="space-y-2 border-t border-white/[0.07] p-4">
                     {day.exercises.map((target, index) => {
                         const exercise = db.exercises.byId(target.exerciseId);
-                        const scaled = scaleTargetsForWeek(target, viewWeek, durationWeeks);
+                        const scaled = scaleTargetsForWeek(target, viewWeek, durationWeeks, goal);
                         return (
                             <div
                                 key={`${target.exerciseId}-${index}`}
@@ -268,8 +273,9 @@ function DayCard({ day, viewWeek, durationWeeks, onSwap, onAdd, onRemove, onAdju
                                     </p>
                                     <p className="text-xs tabular-nums text-ink-500">
                                         {scaled.targetSets} × {scaled.targetRepsMin}–{scaled.targetRepsMax} @ RPE{' '}
-                                        {scaled.targetRpe} · rest {Math.round((target.restSec || 120) / 60)}m
+                                        {scaled.targetRpe} · rest {target.restSec || 120}s
                                     </p>
+                                    {target.notes && <p className="mt-1 text-xs leading-relaxed text-ink-400">{target.notes}</p>}
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
                                     <button type="button" onClick={() => onAdjustSets(index, -1)} className="increment-btn h-8 w-8" aria-label="Fewer sets">
@@ -353,7 +359,7 @@ function ImportShare({ fragment, onDone, onCancel }) {
                             <div className="flex gap-2">
                                 <Chip tone="accent">{program.daysPerWeek} days/wk</Chip>
                                 <Chip>{program.durationWeeks} weeks</Chip>
-                                <Chip>{program.goal}</Chip>
+                                <Chip>{GOALS[program.goal]?.label || program.goal}</Chip>
                             </div>
                         </div>
                         <div className="grid gap-2 md:grid-cols-2">
@@ -416,9 +422,10 @@ function Wizard({ hasExisting, onDone, onCancel }) {
     const [config, setConfig] = useState({
         goal: settings.goal || 'hypertrophy',
         experience: settings.experience || 'intermediate',
-        daysPerWeek: 4,
-        durationWeeks: 6,
+        daysPerWeek: settings.goal === GLUTE_GOAL ? 5 : 4,
+        durationWeeks: settings.goal === GLUTE_GOAL ? 8 : 6,
         equipment: 'full',
+        lowerBodyDays: 3,
     });
     const preview = useMemo(() => generateProgram(config), [config]);
 
@@ -436,7 +443,7 @@ function Wizard({ hasExisting, onDone, onCancel }) {
             <PageHeader
                 eyebrow="Plan"
                 title={hasExisting ? 'New training block' : 'Create your program'}
-                description="Answer four questions; the engine assembles a periodized block instantly."
+                description="Choose your goal, schedule and equipment. Preview every session before you start."
                 icon={Sparkles}
                 actions={
                     onCancel && (
@@ -450,13 +457,20 @@ function Wizard({ hasExisting, onDone, onCancel }) {
             <Card className="space-y-6 glass-card-glow border-accent/30 shadow-glass-glow-purple">
                 <Field label="Goal">
                     <Segmented
+                        label="Main goal"
                         value={config.goal}
-                        onChange={(goal) => setConfig((c) => ({ ...c, goal }))}
+                        onChange={(goal) => setConfig((c) => updateTrainingConfig(c, { goal }))}
                         options={Object.entries(GOALS).map(([value, g]) => ({ value, label: g.label }))}
                     />
+                    {config.goal === GLUTE_GOAL && <p className="mt-3 text-sm leading-relaxed text-ink-400">{GLUTE_INTRO}</p>}
                 </Field>
+                {config.goal === GLUTE_GOAL && <Field label="Lower-body days">
+                    <Segmented label="Lower-body days" value={config.lowerBodyDays} onChange={lowerBodyDays => setConfig(c => updateTrainingConfig(c, { lowerBodyDays }))} options={LOWER_DAY_OPTIONS} />
+                    <p className="mt-2 text-xs leading-relaxed text-ink-400">Days per week includes every session. Choose {config.lowerBodyDays + 2} days for two dedicated upper-body days; shorter schedules mix upper-body work into lower sessions.</p>
+                </Field>}
                 <Field label="Experience">
                     <Segmented
+                        label="Experience"
                         value={config.experience}
                         onChange={(experience) => setConfig((c) => ({ ...c, experience }))}
                         options={[
@@ -468,13 +482,15 @@ function Wizard({ hasExisting, onDone, onCancel }) {
                 </Field>
                 <Field label="Days per week">
                     <Segmented
+                        label="Days per week"
                         value={config.daysPerWeek}
                         onChange={(daysPerWeek) => setConfig((c) => ({ ...c, daysPerWeek }))}
-                        options={[2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))}
+                        options={trainingDaysForGoal(config.goal, config.lowerBodyDays).map((n) => ({ value: n, label: String(n) }))}
                     />
                 </Field>
                 <Field label="Equipment">
                     <Segmented
+                        label="Equipment"
                         value={config.equipment}
                         onChange={(equipment) => setConfig((c) => ({ ...c, equipment }))}
                         options={[
@@ -484,6 +500,9 @@ function Wizard({ hasExisting, onDone, onCancel }) {
                         ]}
                     />
                 </Field>
+                {config.goal === GLUTE_GOAL && <Field label="Block length">
+                    <Segmented label="Block length" value={config.durationWeeks} onChange={durationWeeks => setConfig(c => ({ ...c, durationWeeks }))} options={[6, 8, 12].map(value => ({ value, label: `${value} weeks` }))} />
+                </Field>}
             </Card>
 
             {/* Live preview */}
@@ -492,6 +511,7 @@ function Wizard({ hasExisting, onDone, onCancel }) {
                     <div>
                         <div className="eyebrow mb-1">Preview</div>
                         <h2 className="font-display text-lg font-bold text-white">{preview.name}</h2>
+                        {config.goal === GLUTE_GOAL && <p className="mt-1 text-xs text-ink-400">Base working sets · easier effort in weeks 1–2</p>}
                     </div>
                     <Chip tone="accent">{preview.durationWeeks} weeks</Chip>
                 </div>
@@ -501,20 +521,20 @@ function Wizard({ hasExisting, onDone, onCancel }) {
                             <p className="mb-1.5 text-sm font-bold text-white">
                                 Day {day.dayNumber} · {day.name}
                             </p>
+                            <p className="mb-2 text-xs text-ink-500">{day.focus}</p>
                             <ul className="space-y-0.5 text-xs text-ink-400">
                                 {day.exercises.map((e, i) => (
-                                    <li key={i} className="truncate">
-                                        {db.exercises.byId(e.exerciseId)?.name} — {e.targetSets}×
-                                        {e.targetRepsMin}–{e.targetRepsMax}
+                                    <li key={i} className="flex items-start justify-between gap-2 py-0.5">
+                                        <span className="min-w-0">{db.exercises.byId(e.exerciseId)?.name}</span>
+                                        <span className="shrink-0 tabular-nums">{e.targetSets}×{e.targetRepsMin}–{e.targetRepsMax}</span>
                                     </li>
                                 ))}
                             </ul>
                         </div>
                     ))}
                 </div>
-                <p className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 text-xs leading-relaxed text-ink-400">
-                    {preview.rationale}
-                </p>
+                <GluteGuide program={preview} />
+                {config.goal === GLUTE_GOAL ? <details className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 text-xs leading-relaxed text-ink-400"><summary className="cursor-pointer py-1 font-semibold text-ink-300">Why these exercises and targets?</summary><p className="mt-2">{preview.rationale}</p></details> : <p className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 text-xs leading-relaxed text-ink-400">{preview.rationale}</p>}
                 <button type="button" onClick={create} className="btn-primary btn-lg w-full">
                     <Sparkles className="h-5 w-5" />
                     {hasExisting ? 'Replace active program' : 'Start this program'}
