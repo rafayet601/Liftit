@@ -149,6 +149,8 @@ describe('importer core — matching ladder', () => {
     it.each([
         ['Bench Press (Barbell)', 'barbell-bench-press'],
         ['Squat (Barbell)', 'barbell-back-squat'],
+        ['Bodyweight Squat', 'bodyweight-squat'],
+        ['Bodyweight Split Squat', 'bodyweight-split-squat'],
         ['Deadlift (Barbell)', 'conventional-deadlift'],
         ['Back Squat (Barbell)', 'barbell-back-squat'],
         ['Bent Over Row (Barbell)', 'barbell-row'],

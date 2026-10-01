@@ -95,9 +95,6 @@ export const EXERCISE_LIBRARY = [
     ex('bench-dips', 'Bench Dips', 'triceps', 'bodyweight', { secondary: ['chest'] }),
 
     /* ---------------- Quads ---------------- */
-    ex('bodyweight-squat', 'Bodyweight Squat', 'quads', 'bodyweight', { compound: true, secondary: ['glutes', 'core'] }),
-    ex('bodyweight-split-squat', 'Bodyweight Split Squat', 'quads', 'bodyweight', { compound: true, secondary: ['glutes'] }),
-    ex('reverse-lunge', 'Reverse Lunge', 'quads', 'bodyweight', { compound: true, secondary: ['glutes'] }),
     ex('barbell-back-squat', 'Barbell Back Squat', 'quads', 'barbell', { compound: true, secondary: ['glutes', 'hamstrings', 'core'] }),
     ex('front-squat', 'Front Squat', 'quads', 'barbell', { compound: true, secondary: ['glutes', 'core'] }),
     ex('leg-press', 'Leg Press', 'quads', 'machine', { compound: true, secondary: ['glutes'] }),
@@ -106,6 +103,10 @@ export const EXERCISE_LIBRARY = [
     ex('walking-lunge', 'Walking Lunge', 'quads', 'dumbbell', { compound: true, secondary: ['glutes', 'hamstrings'] }),
     ex('leg-extension', 'Leg Extension', 'quads', 'machine'),
     ex('goblet-squat', 'Goblet Squat', 'quads', 'kettlebell', { compound: true, secondary: ['glutes', 'core'] }),
+    // Keep established variants first for legacy imports with generic names.
+    ex('bodyweight-squat', 'Bodyweight Squat', 'quads', 'bodyweight', { compound: true, secondary: ['glutes', 'core'] }),
+    ex('bodyweight-split-squat', 'Bodyweight Split Squat', 'quads', 'bodyweight', { compound: true, secondary: ['glutes'] }),
+    ex('reverse-lunge', 'Reverse Lunge', 'quads', 'bodyweight', { compound: true, secondary: ['glutes'] }),
 
     /* ---------------- Hamstrings ---------------- */
     ex('kettlebell-rdl', 'Kettlebell Romanian Deadlift', 'hamstrings', 'kettlebell', { compound: true, secondary: ['glutes'] }),
