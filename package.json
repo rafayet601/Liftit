@@ -82,7 +82,7 @@
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.4",
     "workbox-window": "^7.4.1",
-    "wrangler": "^4.118.0"
+    "wrangler": "^4.131.0"
   },
   "overrides": {
     "serialize-javascript": "^7.0.5",
